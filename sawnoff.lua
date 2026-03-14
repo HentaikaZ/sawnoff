@@ -1,5 +1,5 @@
 script_name("Sawnoff")
-script_version("1.0.2")
+script_version("1.0.3")
 script_author('SAKUTA')
 
 local se = require 'lib.samp.events'
