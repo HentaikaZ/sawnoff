@@ -94,172 +94,77 @@ local function checkForUpdate(manual)
     update_check_running = true
     lua_thread.create(function()
         local json_url = "https://raw.githubusercontent.com/HentaikaZ/sawnoff/refs/heads/main/autoupdate.json"
-        local temp_name = thisScript().name..'_'..os.time()..'_'..math.random(1000,9999)..'.json'
-        local json_path = getWorkingDirectory() .. '\\' .. temp_name
-        
-<<<<<<< Updated upstream:sawnoff.lua
-        local success, err = pcall(downloadUrlToFile, json_url, json_path, function(id, status, p1, p2)
-            if status == dlstatus.STATUSEX_ENDDOWNLOAD then
-                if doesFileExist(json_path) then
-                    local f = io.open(json_path, 'r')
-                    if f then
-                        local content = f:read('*a')
-                        f:close()
-                        os.remove(json_path)
-                        local ok, info = pcall(cjson.decode, content)
-                        if ok and info and info.latest and info.updateurl then
-                            local latest = info.latest
-                            local update_link = info.updateurl
-                            update_version = latest
-                            update_url = update_link
-                            if latest ~= thisScript().version then
-                                update_available = true
-                                if manual then
-                                    sampAddChatMessage(string.format('[Г€Г­ГґГ®Г°Г¬Г Г¶ГЁГї] {FFFFFF}ГЋГЎГ­Г Г°ГіГ¦ГҐГ­Г® Г®ГЎГ­Г®ГўГ«ГҐГ­ГЁГҐ {FF6347}%s{FFFFFF}. ГЌГ Г·ГЁГ­Г Гѕ Г®ГЎГ­Г®ГўГ«ГҐГ­ГЁГҐ...', latest), 0x96FF00)
-                                    downloadUrlToFile(update_link, thisScript().path,
-                                        function(id3, status1, p13, p23)
-                                            if status1 == dlstatus.STATUS_DOWNLOADINGDATA then
-                                                print(string.format('Г‡Г ГЈГ°ГіГ¦ГҐГ­Г® %d ГЁГ§ %d.', p13, p23))
-                                            elseif status1 == dlstatus.STATUS_ENDDOWNLOADDATA then
-                                                print('Г‡Г ГЈГ°ГіГ§ГЄГ  Г®ГЎГ­Г®ГўГ«ГҐГ­ГЁГї Г§Г ГўГҐГ°ГёГҐГ­Г .')
-                                                sampAddChatMessage('[Г€Г­ГґГ®Г°Г¬Г Г¶ГЁГї] {FFFFFF}ГЋГЎГ­Г®ГўГ«ГҐГ­ГЁГҐ Г§Г ГўГҐГ°ГёГҐГ­Г®!', 0x96FF00)
-                                                lua_thread.create(function() wait(500) thisScript():reload() end)
-                                            end
-                                        end
-                                    )
-                                else
-                                    if auto_update and auto_update[0] then
-                                        sampAddChatMessage(string.format('[Г€Г­ГґГ®Г°Г¬Г Г¶ГЁГї] {FFFFFF}ГЋГЎГ­Г Г°ГіГ¦ГҐГ­Г® Г®ГЎГ­Г®ГўГ«ГҐГ­ГЁГҐ {FF6347}%s{FFFFFF}. ГЂГўГІГ®Г®ГЎГ­Г®ГўГ«ГҐГ­ГЁГҐ...', latest), 0x96FF00)
-                                        downloadUrlToFile(update_link, thisScript().path,
-                                            function(id3, status1, p13, p23)
-                                                if status1 == dlstatus.STATUS_DOWNLOADINGDATA then
-                                                    print(string.format('Г‡Г ГЈГ°ГіГ¦ГҐГ­Г® %d ГЁГ§ %d.', p13, p23))
-                                                elseif status1 == dlstatus.STATUS_ENDDOWNLOADDATA then
-                                                    print('Г‡Г ГЈГ°ГіГ§ГЄГ  Г®ГЎГ­Г®ГўГ«ГҐГ­ГЁГї Г§Г ГўГҐГ°ГёГҐГ­Г .')
-                                                    sampAddChatMessage('[Г€Г­ГґГ®Г°Г¬Г Г¶ГЁГї] {FFFFFF}ГЋГЎГ­Г®ГўГ«ГҐГ­ГЁГҐ Г§Г ГўГҐГ°ГёГҐГ­Г®!', 0x96FF00)
-                                                    lua_thread.create(function() wait(500) thisScript():reload() end)
-=======
-        local dir = getWorkingDirectory()
-        if not dir or not doesDirectoryExist(dir) then
-            sampAddChatMessage('[Информация] {FF6347}Ошибка: папка Moonloader не найдена.', 0x96FF00)
+        local success, response = pcall(requests.get, json_url, { timeout = 10 })
+        if not success or response.status_code ~= 200 then
+            sampAddChatMessage('[Информация] {FF6347}Не удалось проверить обновление (ошибка сети).', 0x96FF00)
             update_check_running = false
             return
         end
         
-        local download_ok, download_err = pcall(function()
-            downloadUrlToFile(json_url, json_path, function(id, status, p1, p2)
-                if status == dlstatus.STATUSEX_ENDDOWNLOAD then
-                    local file_exists = false
-                    pcall(function() file_exists = doesFileExist(json_path) end)
-                    if file_exists then
-                        local f = nil
-                        local open_ok = pcall(function() f = io.open(json_path, 'r') end)
-                        if open_ok and f then
-                            local content = f:read('*a')
-                            f:close()
-                            pcall(function() os.remove(json_path) end)
-                            
-                            local ok, info = pcall(cjson.decode, content)
-                            if ok and info and info.latest and info.updateurl then
-                                local latest = info.latest
-                                local update_link = info.updateurl
-                                update_version = latest
-                                update_url = update_link
-                                if latest ~= thisScript().version then
-                                    update_available = true
-                                    if manual then
-                                        sampAddChatMessage(string.format('[Информация] {FFFFFF}Обнаружено обновление {FF6347}%s{FFFFFF}. Начинаю обновление...', latest), 0x96FF00)
-                                        pcall(function()
-                                            downloadUrlToFile(update_link, thisScript().path,
-                                                function(id3, status1, p13, p23)
-                                                    if status1 == dlstatus.STATUS_DOWNLOADINGDATA then
-                                                        print(string.format('Загружено %d из %d.', p13, p23))
-                                                    elseif status1 == dlstatus.STATUS_ENDDOWNLOADDATA then
-                                                        print('Загрузка обновления завершена.')
-                                                        sampAddChatMessage('[Информация] {FFFFFF}Обновление завершено!', 0x96FF00)
-                                                        lua_thread.create(function() wait(500) thisScript():reload() end)
-                                                    end
->>>>>>> Stashed changes:sawnoff auto collector.lua
-                                                end
-                                            )
-                                        end)
-                                    else
-<<<<<<< Updated upstream:sawnoff.lua
-                                        if not update_notified then
-                                            sampAddChatMessage('[Г€Г­ГґГ®Г°Г¬Г Г¶ГЁГї] {FFFFFF}Г„Г®Г±ГІГіГЇГ­Г® Г®ГЎГ­Г®ГўГ«ГҐГ­ГЁГҐ. ГЌГ Г¦Г¬ГЁГІГҐ ГЄГ­Г®ГЇГЄГі "ГЏГ°Г®ГўГҐГ°ГЄГ  Г®ГЎГ­Г®ГўГ«ГҐГ­ГЁГї" Г¤Г«Гї Г®ГЎГ­Г®ГўГ«ГҐГ­ГЁГї.', 0x96FF00)
-                                            update_notified = true
-=======
-                                        if auto_update and auto_update[0] then
-                                            sampAddChatMessage(string.format('[Информация] {FFFFFF}Обнаружено обновление {FF6347}%s{FFFFFF}. Автообновление...', latest), 0x96FF00)
-                                            pcall(function()
-                                                downloadUrlToFile(update_link, thisScript().path,
-                                                    function(id3, status1, p13, p23)
-                                                        if status1 == dlstatus.STATUS_DOWNLOADINGDATA then
-                                                            print(string.format('Загружено %d из %d.', p13, p23))
-                                                        elseif status1 == dlstatus.STATUS_ENDDOWNLOADDATA then
-                                                            print('Загрузка обновления завершена.')
-                                                            sampAddChatMessage('[Информация] {FFFFFF}Обновление завершено!', 0x96FF00)
-                                                            lua_thread.create(function() wait(500) thisScript():reload() end)
-                                                        end
-                                                    end
-                                                )
-                                            end)
-                                        else
-                                            if not update_notified then
-                                                sampAddChatMessage('[Информация] {FFFFFF}Доступно обновление. Нажмите кнопку "Проверка обновления" для обновления.', 0x96FF00)
-                                                update_notified = true
-                                            end
->>>>>>> Stashed changes:sawnoff auto collector.lua
-                                        end
-                                    end
-                                else
-                                    update_available = false
-                                    if manual then
-                                        sampAddChatMessage('[Информация] {FFFFFF}У вас актуальная версия скрипта.', 0x96FF00)
-                                    end
-                                end
-                            else
-<<<<<<< Updated upstream:sawnoff.lua
-                                update_available = false
-                                if manual then
-                                    sampAddChatMessage('[Г€Г­ГґГ®Г°Г¬Г Г¶ГЁГї] {FFFFFF}Г“ ГўГ Г± Г ГЄГІГіГ Г«ГјГ­Г Гї ГўГҐГ°Г±ГЁГї Г±ГЄГ°ГЁГЇГІГ .', 0x96FF00)
-                                end
-                            end
-                        else
-                            sampAddChatMessage('[Г€Г­ГґГ®Г°Г¬Г Г¶ГЁГї] {FF6347}ГЋГёГЁГЎГЄГ  ГЇГ°Г®ГўГҐГ°ГЄГЁ Г®ГЎГ­Г®ГўГ«ГҐГ­ГЁГї. Г‘ГўГїГ¦ГЁГІГҐГ±Гј Г± Г°Г Г§Г°Г ГЎГ®ГІГ·ГЁГЄГ®Г¬.', 0x96FF00)
-                        end
-                    else
-                        sampAddChatMessage('[Г€Г­ГґГ®Г°Г¬Г Г¶ГЁГї] {FF6347}ГЌГҐ ГіГ¤Г Г«Г®Г±Гј ГЇГ°Г®Г·ГЁГІГ ГІГј ГґГ Г©Г« Г®ГЎГ­Г®ГўГ«ГҐГ­ГЁГї. Г‘ГўГїГ¦ГЁГІГҐГ±Гј Г± Г°Г Г§Г°Г ГЎГ®ГІГ·ГЁГЄГ®Г¬.', 0x96FF00)
-                    end
-                    if doesFileExist(json_path) then os.remove(json_path) end
-                else
-                    sampAddChatMessage('[Г€Г­ГґГ®Г°Г¬Г Г¶ГЁГї] {FF6347}ГЌГҐ ГіГ¤Г Г«Г®Г±Гј Г§Г ГЈГ°ГіГ§ГЁГІГј ГґГ Г©Г« Г®ГЎГ­Г®ГўГ«ГҐГ­ГЁГї. Г‘ГўГїГ¦ГЁГІГҐГ±Гј Г± Г°Г Г§Г°Г ГЎГ®ГІГ·ГЁГЄГ®Г¬.', 0x96FF00)
-=======
-                                sampAddChatMessage('[Информация] {FF6347}Ошибка парсинга JSON. Свяжитесь с разработчиком.', 0x96FF00)
-                            end
-                        else
-                            sampAddChatMessage('[Информация] {FF6347}Не удалось открыть файл обновления.', 0x96FF00)
-                            pcall(function() if doesFileExist(json_path) then os.remove(json_path) end end)
-                        end
-                    else
-                        sampAddChatMessage('[Информация] {FF6347}Файл обновления не найден после загрузки.', 0x96FF00)
-                    end
-                elseif status == dlstatus.STATUS_DOWNLOADINGDATA then
-                    -- прогресс, игнорируем
-                elseif status == dlstatus.STATUSEX_ABORTED then
-                    sampAddChatMessage('[Информация] {FF6347}Загрузка обновления прервана.', 0x96FF00)
->>>>>>> Stashed changes:sawnoff auto collector.lua
-                end
-            end)
-        end)
+        local content = response.text
+        local ok, info = pcall(cjson.decode, content)
+        if not ok or not info or not info.latest or not info.updateurl then
+            sampAddChatMessage('[Информация] {FF6347}Ошибка парсинга ответа обновления.', 0x96FF00)
+            update_check_running = false
+            return
+        end
         
-<<<<<<< Updated upstream:sawnoff.lua
-        if not success then
-            sampAddChatMessage('[Г€Г­ГґГ®Г°Г¬Г Г¶ГЁГї] {FF6347}ГЋГёГЁГЎГЄГ  ГЇГ°ГЁ Г§Г ГЈГ°ГіГ§ГЄГҐ Г®ГЎГ­Г®ГўГ«ГҐГ­ГЁГї. Г‘ГўГїГ¦ГЁГІГҐГ±Гј Г± Г°Г Г§Г°Г ГЎГ®ГІГ·ГЁГЄГ®Г¬.', 0x96FF00)
-=======
-        if not download_ok then
-            sampAddChatMessage('[Информация] {FF6347}Ошибка при запуске загрузки: ' .. tostring(download_err), 0x96FF00)
->>>>>>> Stashed changes:sawnoff auto collector.lua
+        local latest = info.latest
+        local update_link = info.updateurl
+        update_version = latest
+        update_url = update_link
+        
+        if latest == thisScript().version then
+            update_available = false
+            if manual then
+                sampAddChatMessage('[Информация] {FFFFFF}У вас актуальная версия скрипта.', 0x96FF00)
+            end
+            update_check_running = false
+            return
+        end
+        
+        update_available = true
+        if manual then
+            sampAddChatMessage(string.format('[Информация] {FFFFFF}Обнаружено обновление {FF6347}%s{FFFFFF}. Начинаю обновление...', latest), 0x96FF00)
+            local file_success, file_response = pcall(requests.get, update_link, { timeout = 30 })
+            if file_success and file_response.status_code == 200 then
+                local script_path = thisScript().path
+                local file = io.open(script_path, 'wb')
+                if file then
+                    file:write(file_response.text)
+                    file:close()
+                    sampAddChatMessage('[Информация] {FFFFFF}Обновление завершено!', 0x96FF00)
+                    lua_thread.create(function() wait(500) thisScript():reload() end)
+                else
+                    sampAddChatMessage('[Информация] {FF6347}Не удалось записать файл скрипта.', 0x96FF00)
+                end
+            else
+                sampAddChatMessage('[Информация] {FF6347}Не удалось загрузить обновление.', 0x96FF00)
+            end
+        else
+            if auto_update and auto_update[0] then
+                sampAddChatMessage(string.format('[Информация] {FFFFFF}Обнаружено обновление {FF6347}%s{FFFFFF}. Автообновление...', latest), 0x96FF00)
+                local file_success, file_response = pcall(requests.get, update_link, { timeout = 30 })
+                if file_success and file_response.status_code == 200 then
+                    local script_path = thisScript().path
+                    local file = io.open(script_path, 'wb')
+                    if file then
+                        file:write(file_response.text)
+                        file:close()
+                        sampAddChatMessage('[Информация] {FFFFFF}Обновление завершено!', 0x96FF00)
+                        lua_thread.create(function() wait(500) thisScript():reload() end)
+                    else
+                        sampAddChatMessage('[Информация] {FF6347}Не удалось записать файл скрипта.', 0x96FF00)
+                    end
+                else
+                    sampAddChatMessage('[Информация] {FF6347}Не удалось загрузить обновление.', 0x96FF00)
+                end
+            else
+                if not update_notified then
+                    sampAddChatMessage('[Информация] {FFFFFF}Доступно обновление. Нажмите кнопку "Проверка обновления" для обновления.', 0x96FF00)
+                    update_notified = true
+                end
+            end
         end
         
         update_check_running = false
