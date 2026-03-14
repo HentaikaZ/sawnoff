@@ -91,14 +91,13 @@ local update_url = nil
 
 local function checkForUpdate(manual)
     if update_check_running then return end
-    if not auto_update then return end
     update_check_running = true
     lua_thread.create(function()
         local json_url = "https://raw.githubusercontent.com/HentaikaZ/sawnoff/refs/heads/main/autoupdate.json"
-        local json_path = getWorkingDirectory() .. '\\'..thisScript().name..'-version.json'
-        if doesFileExist(json_path) then os.remove(json_path) end
-        downloadUrlToFile(json_url, json_path,
-        function(id, status, p1, p2)
+        local temp_name = thisScript().name..'_'..os.time()..'_'..math.random(1000,9999)..'.json'
+        local json_path = getWorkingDirectory() .. '\\' .. temp_name
+        
+        local success, err = pcall(downloadUrlToFile, json_url, json_path, function(id, status, p1, p2)
             if status == dlstatus.STATUSEX_ENDDOWNLOAD then
                 if doesFileExist(json_path) then
                     local f = io.open(json_path, 'r')
@@ -106,8 +105,8 @@ local function checkForUpdate(manual)
                         local content = f:read('*a')
                         f:close()
                         os.remove(json_path)
-                        local success, info = pcall(cjson.decode, content)
-                        if success and info and info.latest and info.updateurl then
+                        local ok, info = pcall(cjson.decode, content)
+                        if ok and info and info.latest and info.updateurl then
                             local latest = info.latest
                             local update_link = info.updateurl
                             update_version = latest
@@ -158,14 +157,19 @@ local function checkForUpdate(manual)
                             sampAddChatMessage('[Информация] {FF6347}Ошибка проверки обновления. Свяжитесь с разработчиком.', 0x96FF00)
                         end
                     else
-                        sampAddChatMessage('[Информация] {FF6347}Не удалось проверить обновление. Свяжитесь с разработчиком.', 0x96FF00)
+                        sampAddChatMessage('[Информация] {FF6347}Не удалось прочитать файл обновления. Свяжитесь с разработчиком.', 0x96FF00)
                     end
+                    if doesFileExist(json_path) then os.remove(json_path) end
                 else
-                    sampAddChatMessage('[Информация] {FF6347}Не удалось проверить обновление. Свяжитесь с разработчиком.', 0x96FF00)
+                    sampAddChatMessage('[Информация] {FF6347}Не удалось загрузить файл обновления. Свяжитесь с разработчиком.', 0x96FF00)
                 end
             end
-            update_check_running = false
         end)
+        
+        if not success then
+            sampAddChatMessage('[Информация] {FF6347}Ошибка при загрузке обновления. Свяжитесь с разработчиком.', 0x96FF00)
+        end
+        update_check_running = false
     end)
 end
 
