@@ -414,177 +414,185 @@ function main()
 				if not sampIsLocalPlayerSpawned() and sampGetGamestate() == 3 then
 					work = false
 				else
-					if first_start and timer and timer[0] then
-						if timer_time and timer_time[0] and timer_time[0] > 0 then
-						    wait(timer_time[0] * 60000)
-						    timer_time[0] = 0
-						end
-					end	
-					if first_start then
-						if targetId and targetId > 0 then findItemById(inventory, targetId) end
-						if alt_model_id and alt_model_id[0] and alt_model_id[0] > 0 then FindAltItem(inventory, alt_model_id[0]) end
-						sampSendClickTextdraw(65535)
-						sampAddChatMessage('[Информация] {FFFFFF}Сейчас откроется инвентарь.', 0x96FF00)
-					elseif not first_start and open_inventory and not open_inventory[0] then
-						if targetId and targetId > 0 then findItemById(inventory, targetId) end
-						if alt_model_id and alt_model_id[0] and alt_model_id[0] > 0 then FindAltItem(inventory, alt_model_id[0]) end
-						sampSendClickTextdraw(65535)
-						sampAddChatMessage('[Информация] {FFFFFF}Сейчас откроется инвентарь.', 0x96FF00)
-					end
-					wait(333)
-					inventory_fix = true
-					wait(333)
-					if first_start then
-						if targetId and targetId > 0 then findItemById(inventory, targetId) end
-						if alt_model_id and alt_model_id[0] and alt_model_id[0] > 0 then FindAltItem(inventory, alt_model_id[0]) end
-						sampSendChat('/invent')
-					elseif not first_start and open_inventory and not open_inventory[0] then
-						if targetId and targetId > 0 then findItemById(inventory, targetId) end
-						if alt_model_id and alt_model_id[0] and alt_model_id[0] > 0 then FindAltItem(inventory, alt_model_id[0]) end
-						sampSendChat('/invent')
-					elseif not first_start and open_inventory and open_inventory[0] and not isInventoryTextdrawValid() then
-						if targetId and targetId > 0 then findItemById(inventory, targetId) end
-						if alt_model_id and alt_model_id[0] and alt_model_id[0] > 0 then FindAltItem(inventory, alt_model_id[0]) end
-						sampSendChat('/invent')
-					end
-					
-					if cef and cef[0] and auto_cycle_cd == false then
-						wait(333)
-						local sawnoff_slot = findItemById(inventory, targetId)
-						if sawnoff_slot ~= nil then
-							if sawnoff_slot ~= 3 then
-								repeat
-									sampSendChat('/invent')
-									wait(333)
-									sawnoff_slot = findItemById(inventory, targetId)
-								until sawnoff_slot or not work
-							end
-							if sawnoff_slot == 3 then
-								send_cef('clickOnButton|{"type": 2,"slot": 3, "action": 1}')
-								sawnoff[5] = true
-								delay_time = nil
-								local wait_start = os.time()
-								repeat wait(100) until delay_time ~= nil or not work or os.time() - wait_start > 10
-								if delay_time == nil then delay_time = 60 end
-							elseif sawnoff_slot and type(sawnoff_slot) == 'number' then
-								send_cef('inventory.moveItemForce|{"slot": ' .. tostring(sawnoff_slot) .. ', "type": 1, "amount": 1}')
-								wait(333)
-								send_cef('clickOnButton|{"type": 2,"slot": 3, "action": 1}')
-								sawnoff[5] = true
-								delay_time = nil
-								local wait_start = os.time()
-								repeat wait(100) until delay_time ~= nil or not work or os.time() - wait_start > 10
-								if delay_time == nil then delay_time = 60 end
-							end
-						end
+					-- Если включён автоцикл с альтом – ничего не делаем, просто ждём
+					if auto_cycle_cd and auto_cycle_cd[0] then
+						wait(1000)  -- большой интервал, чтобы не нагружать процессор
 					else
-						repeat wait(1) until not work or isInventoryTextdrawValid()
-						wait(333)
-						if sawnoff and sawnoff['textdraw_id'] ~= nil then
-							if not isInventoryTextdrawValid() then
-								repeat
-									sampSendChat('/invent')
-									wait(1000)
-								until isInventoryTextdrawValid() or not work
+						-- Старый код сбора (без автоцикла)
+						if first_start and timer and timer[0] then
+							if timer_time and timer_time[0] and timer_time[0] > 0 then
+							    wait(timer_time[0] * 60000)
+							    timer_time[0] = 0
 							end
-							sawnoff[5] = true
-							repeat
-								safeClick(sawnoff['textdraw_id'])
-								repeat wait(1) until (sawnoff and (textdrawExists(sawnoff['textdraw_put_id']) or textdrawExists(sawnoff['textdraw_use_id']))) or not work
-								wait(500)
-								if sawnoff and sawnoff[4] == false then
-									safeClick(sawnoff['textdraw_put_id'])
-									wait(1000)
-									safeClick(sawnoff['textdraw_id'])
-									repeat wait(1) until (sawnoff and (textdrawExists(sawnoff['textdraw_put_id']) or textdrawExists(sawnoff['textdraw_use_id']))) or not work
-									wait(500)
-								end
-								safeClick(sawnoff['textdraw_use_id'])
-								wait(500)
-							until sawnoff and sawnoff[5] == false or not work
-						else
-							sampAddChatMessage('[Информация] {FFFFFF}«Обрез (активный аксессуар)» {FF6347}не найден{FFFFFF}.', 0x96FF00)
-							sampAddChatMessage('[Информация] {FFFFFF}Автоматический сбор обреза: {FF6347}выключен{FFFFFF}.', 0x96FF00)
+						end	
+						if first_start then
+							if targetId and targetId > 0 then findItemById(inventory, targetId) end
+							if alt_model_id and alt_model_id[0] and alt_model_id[0] > 0 then FindAltItem(inventory, alt_model_id[0]) end
 							sampSendClickTextdraw(65535)
-							showCursor(false)
-							thisScript():reload()
+							sampAddChatMessage('[Информация] {FFFFFF}Сейчас откроется инвентарь.', 0x96FF00)
+						elseif not first_start and open_inventory and not open_inventory[0] then
+							if targetId and targetId > 0 then findItemById(inventory, targetId) end
+							if alt_model_id and alt_model_id[0] and alt_model_id[0] > 0 then FindAltItem(inventory, alt_model_id[0]) end
+							sampSendClickTextdraw(65535)
+							sampAddChatMessage('[Информация] {FFFFFF}Сейчас откроется инвентарь.', 0x96FF00)
 						end
-						wait(500)
-					end
+						wait(333)
+						inventory_fix = true
+						wait(333)
+						if first_start then
+							if targetId and targetId > 0 then findItemById(inventory, targetId) end
+							if alt_model_id and alt_model_id[0] and alt_model_id[0] > 0 then FindAltItem(inventory, alt_model_id[0]) end
+							sampSendChat('/invent')
+						elseif not first_start and open_inventory and not open_inventory[0] then
+							if targetId and targetId > 0 then findItemById(inventory, targetId) end
+							if alt_model_id and alt_model_id[0] and alt_model_id[0] > 0 then FindAltItem(inventory, alt_model_id[0]) end
+							sampSendChat('/invent')
+						elseif not first_start and open_inventory and open_inventory[0] and not isInventoryTextdrawValid() then
+							if targetId and targetId > 0 then findItemById(inventory, targetId) end
+							if alt_model_id and alt_model_id[0] and alt_model_id[0] > 0 then FindAltItem(inventory, alt_model_id[0]) end
+							sampSendChat('/invent')
+						end
+						
+						if auto_cycle_cd == false then
+							if cef and cef[0] then
+								wait(333)
+								local sawnoff_slot = findItemById(inventory, targetId)
+								if sawnoff_slot ~= nil then
+									if sawnoff_slot ~= 3 then
+										repeat
+											sampSendChat('/invent')
+											wait(333)
+											sawnoff_slot = findItemById(inventory, targetId)
+										until sawnoff_slot or not work
+									end
+									if sawnoff_slot == 3 then
+										send_cef('clickOnButton|{"type": 2,"slot": 3, "action": 1}')
+										sawnoff[5] = true
+										delay_time = nil
+										local wait_start = os.time()
+										repeat wait(100) until delay_time ~= nil or not work or os.time() - wait_start > 10
+										if delay_time == nil then delay_time = 60 end
+									elseif sawnoff_slot and type(sawnoff_slot) == 'number' then
+										send_cef('inventory.moveItemForce|{"slot": ' .. tostring(sawnoff_slot) .. ', "type": 1, "amount": 1}')
+										wait(333)
+										send_cef('clickOnButton|{"type": 2,"slot": 3, "action": 1}')
+										sawnoff[5] = true
+										delay_time = nil
+										local wait_start = os.time()
+										repeat wait(100) until delay_time ~= nil or not work or os.time() - wait_start > 10
+										if delay_time == nil then delay_time = 60 end
+									end
+								end
+							else
+								repeat wait(1) until not work or isInventoryTextdrawValid()
+								wait(333)
+								if sawnoff and sawnoff['textdraw_id'] ~= nil then
+									if not isInventoryTextdrawValid() then
+										repeat
+											sampSendChat('/invent')
+											wait(1000)
+										until isInventoryTextdrawValid() or not work
+									end
+									sawnoff[5] = true
+									repeat
+										safeClick(sawnoff['textdraw_id'])
+										repeat wait(1) until (sawnoff and (textdrawExists(sawnoff['textdraw_put_id']) or textdrawExists(sawnoff['textdraw_use_id']))) or not work
+										wait(500)
+										if sawnoff and sawnoff[4] == false then
+											safeClick(sawnoff['textdraw_put_id'])
+											wait(1000)
+											safeClick(sawnoff['textdraw_id'])
+											repeat wait(1) until (sawnoff and (textdrawExists(sawnoff['textdraw_put_id']) or textdrawExists(sawnoff['textdraw_use_id']))) or not work
+											wait(500)
+										end
+										safeClick(sawnoff['textdraw_use_id'])
+										wait(500)
+									until sawnoff and sawnoff[5] == false or not work
+								else
+									sampAddChatMessage('[Информация] {FFFFFF}«Обрез (активный аксессуар)» {FF6347}не найден{FFFFFF}.', 0x96FF00)
+									sampAddChatMessage('[Информация] {FFFFFF}Автоматический сбор обреза: {FF6347}выключен{FFFFFF}.', 0x96FF00)
+									sampSendClickTextdraw(65535)
+									showCursor(false)
+									thisScript():reload()
+								end
+								wait(500)
+							end
 
-					if open_inventory and not open_inventory[0] then
-						sampSendClickTextdraw(65535)
-					end
-					if delay_time ~= nil then
-						if random_delay and not random_delay[0] then
-							wait(tonumber(delay_time) * 60000 + 60000)
-						else
-							wait(tonumber(delay_time) * 60000 + 60000 + math.random(random_delay_time_min[0] * 60000, random_delay_time_max[0] * 60000))
+							if open_inventory and not open_inventory[0] then
+								sampSendClickTextdraw(65535)
+							end
+							if delay_time ~= nil then
+								if random_delay and not random_delay[0] then
+									wait(tonumber(delay_time) * 60000 + 60000)
+								else
+									wait(tonumber(delay_time) * 60000 + 60000 + math.random(random_delay_time_min[0] * 60000, random_delay_time_max[0] * 60000))
+								end
+								delay_time = nil
+								first_start = true
+							else
+								if random_delay and not random_delay[0] then
+									wait(61 * 60000)
+								else
+									wait(61 * 60000 + math.random(random_delay_time_min[0] * 60000, random_delay_time_max[0] * 60000))
+								end
+							end
 						end
-						delay_time = nil
-						first_start = true
+					end
+				end
+			end, logError)
+		end
+	end
+
+	function acef.onArizonaDisplay(packet)
+		xpcall(function()
+			if not packet then return end
+			if not acef.decode(packet) then return end
+			
+			if packet.event == 'event.inventory.playerInventory' then
+				local data = packet.json and packet.json[1]
+				if not data or not data.data then return end
+				
+				if data.data.type ~= 1 and data.data.type ~= 2 and data.data.type ~= 3 then return end
+				if data.action ~= 0 and data.action ~= 1 and data.action ~= 2 and data.action ~= 3 then return end
+				
+				local items = data.data.items
+				if not items then return end
+				
+				for _, item in ipairs(items) do
+					if item and item.item and item.slot then
+						local amount = item.amount or 1
+						
+						if debug_mode and debug_mode[0] and cef and cef[0] then
+							sampAddChatMessage(
+								string.format("[Информация] {FF6347}[CEF] {FFFFFF}Слот {FFD700}%d {FFFFFF}| Модель: {42B02C}%d", 
+									item.slot, item.item), 
+								0x96FF00
+							)
+						end
+						
+						safeSetInventoryItem(item.slot, {
+							slot = item.slot,
+							available = item.available,
+							item = item.item,
+							amount = amount
+						})
 					else
-						if random_delay and not random_delay[0] then
-							wait(61 * 60000)
-						else
-							wait(61 * 60000 + math.random(random_delay_time_min[0] * 60000, random_delay_time_max[0] * 60000))
+						if item and item.slot then
+							safeRemoveInventoryItem(item.slot)
 						end
 					end
+				end
+				
+				if alt_model_id and alt_model_id[0] and alt_model_id[0] > 0 then
+					FindAltItem(inventory, alt_model_id[0])
+				end
+				
+				if targetId and targetId > 0 then
+					findItemById(inventory, targetId)
 				end
 			end
 		end, logError)
 	end
-end
-
-function acef.onArizonaDisplay(packet)
-	xpcall(function()
-		if not packet then return end
-		if not acef.decode(packet) then return end
-		
-		if packet.event == 'event.inventory.playerInventory' then
-			local data = packet.json and packet.json[1]
-			if not data or not data.data then return end
-			
-			if data.data.type ~= 1 and data.data.type ~= 2 and data.data.type ~= 3 then return end
-			if data.action ~= 0 and data.action ~= 1 and data.action ~= 2 and data.action ~= 3 then return end
-			
-			local items = data.data.items
-			if not items then return end
-			
-			for _, item in ipairs(items) do
-				if item and item.item and item.slot then
-					local amount = item.amount or 1
-					
-					if debug_mode and debug_mode[0] and cef and cef[0] then
-						sampAddChatMessage(
-							string.format("[Информация] {FF6347}[CEF] {FFFFFF}Слот {FFD700}%d {FFFFFF}| Модель: {42B02C}%d", 
-								item.slot, item.item), 
-							0x96FF00
-						)
-					end
-					
-					safeSetInventoryItem(item.slot, {
-						slot = item.slot,
-						available = item.available,
-						item = item.item,
-						amount = amount
-					})
-				else
-					if item and item.slot then
-						safeRemoveInventoryItem(item.slot)
-					end
-				end
-			end
-			
-			if alt_model_id and alt_model_id[0] and alt_model_id[0] > 0 then
-				FindAltItem(inventory, alt_model_id[0])
-			end
-			
-			if targetId and targetId > 0 then
-				findItemById(inventory, targetId)
-			end
-		end
-	end, logError)
 end
 
 function se.onShowTextDraw(id, data)
@@ -1099,6 +1107,13 @@ function se.onServerMessage(color, text)
 	if work then
 		if text:find('Воспользуйте мастерской по ремонту одежды для восстановления состояния аксессуара!') then
 			sampAddChatMessage('[Информация] {FFFFFF}Аксессуар "Обрез" {FF6347}Сломался! {FFFFFF}Скрипт {FF6347}выключен.', 0x96FF00)
+			thisScript():reload()
+			work = false
+		end
+	end
+	if work then
+		if text:find('[Ошибка] Нельзя использовать во время рестарта сервера!') then
+			sampAddChatMessage('[Информация] {FFFFFF}Сервер {FF6347}рестартится! {FFFFFF}Скрипт {FF6347}выключен.', 0x96FF00)
 			thisScript():reload()
 			work = false
 		end
