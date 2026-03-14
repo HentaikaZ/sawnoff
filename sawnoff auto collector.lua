@@ -9,6 +9,7 @@ local encoding = require 'encoding'
 local acef = require 'arizona-events'
 local requests = require 'requests'
 local dlstatus = require('moonloader').download_status
+local cjson = require 'cjson'
 encoding.default = 'CP1251'
 u8 = encoding.UTF8
 
@@ -24,51 +25,6 @@ local function logError(err)
         file:write(trace .. '\n\n')
         file:close()
     end
-end
-
-local function autoupdate(json_url, prefix, url)
-    lua_thread.create(function()
-        local json = getWorkingDirectory() .. '\\'..thisScript().name..'-version.json'
-        if doesFileExist(json) then os.remove(json) end
-        downloadUrlToFile(json_url, json,
-        function(id, status, p1, p2)
-            if status == dlstatus.STATUSEX_ENDDOWNLOAD then
-                if doesFileExist(json) then
-                    local f = io.open(json, 'r')
-                    if f then
-                        local info = decodeJson(f:read('*a'))
-                        local updatelink = info.updateurl
-                        local updateversion = info.latest
-                        f:close()
-                        os.remove(json)
-                        if updateversion ~= thisScript().version then
-                            lua_thread.create(function(prefix)
-                                local dlstatus = require('moonloader').download_status
-                                sampAddChatMessage(string.format('[Информация] {FFFFFF}Обнаружено обновление. Пытаюсь обновиться c {FF6347} %s {FFFFFF}на {FF6347} %s', thisScript().version, updateversion), 0x96FF00)
-                                wait(250)
-                                downloadUrlToFile(updatelink, thisScript().path,
-                                    function(id3, status1, p13, p23)
-                                        if status1 == dlstatus.STATUS_DOWNLOADINGDATA then
-                                            print(string.format('Загружено %d из %d.', p13, p23))
-                                        elseif status1 == dlstatus.STATUS_ENDDOWNLOADDATA then
-                                            print('Загрузка обновления завершена.')
-                                            sampAddChatMessage('[Информация] {FFFFFF}Обновление завершено!', 0x96FF00)
-                                            lua_thread.create(function() wait(500) thisScript():reload() end)
-                                        end
-                                    end
-                                )
-                            end, prefix)
-                        else
-                            sampAddChatMessage('[Информация] {FFFFFF}Активация {FF6347}/sawnoff {FFFFFF}| Обновление не требуется!', 0x96FF00)
-                        end
-                    end
-                else
-                    sampAddChatMessage('[Информация] {FF6347}Не могу проверить {FFFFFF}обновление. Проверьте на '..url, 0x96FF00)
-                end
-            end
-        end
-        )
-    end)
 end
 
 local cfg = inicfg.load({
@@ -127,6 +83,92 @@ local auto_update = imgui.new.bool(cfg.settings.auto_update)
 local cycle_thread_running = false
 local payday_block = false
 local updateversion = thisScript().version
+local update_check_running = false
+local update_available = false
+local update_notified = false
+local update_version = nil
+local update_url = nil
+
+local function checkForUpdate(manual)
+    if update_check_running then return end
+    update_check_running = true
+    lua_thread.create(function()
+        local json_url = "https://raw.githubusercontent.com/HentaikaZ/sawnoff/refs/heads/main/autoupdate.json"
+        local json_path = getWorkingDirectory() .. '\\'..thisScript().name..'-version.json'
+        if doesFileExist(json_path) then os.remove(json_path) end
+        downloadUrlToFile(json_url, json_path,
+        function(id, status, p1, p2)
+            if status == dlstatus.STATUSEX_ENDDOWNLOAD then
+                if doesFileExist(json_path) then
+                    local f = io.open(json_path, 'r')
+                    if f then
+                        local content = f:read('*a')
+                        f:close()
+                        os.remove(json_path)
+                        local success, info = pcall(cjson.decode, content)
+                        if success and info and info.latest and info.updateurl then
+                            local latest = info.latest
+                            local update_link = info.updateurl
+                            update_version = latest
+                            update_url = update_link
+                            if latest ~= thisScript().version then
+                                update_available = true
+                                if manual then
+                                    -- Manual update
+                                    sampAddChatMessage(string.format('[Информация] {FFFFFF}Обнаружено обновление {FF6347}%s{FFFFFF}. Начинаю обновление...', latest), 0x96FF00)
+                                    downloadUrlToFile(update_link, thisScript().path,
+                                        function(id3, status1, p13, p23)
+                                            if status1 == dlstatus.STATUS_DOWNLOADINGDATA then
+                                                print(string.format('Загружено %d из %d.', p13, p23))
+                                            elseif status1 == dlstatus.STATUS_ENDDOWNLOADDATA then
+                                                print('Загрузка обновления завершена.')
+                                                sampAddChatMessage('[Информация] {FFFFFF}Обновление завершено!', 0x96FF00)
+                                                lua_thread.create(function() wait(500) thisScript():reload() end)
+                                            end
+                                        end
+                                    )
+                                else
+                                    if auto_update and auto_update[0] then
+                                        -- Auto-update enabled
+                                        sampAddChatMessage(string.format('[Информация] {FFFFFF}Обнаружено обновление {FF6347}%s{FFFFFF}. Автообновление...', latest), 0x96FF00)
+                                        downloadUrlToFile(update_link, thisScript().path,
+                                            function(id3, status1, p13, p23)
+                                                if status1 == dlstatus.STATUS_DOWNLOADINGDATA then
+                                                    print(string.format('Загружено %d из %d.', p13, p23))
+                                                elseif status1 == dlstatus.STATUS_ENDDOWNLOADDATA then
+                                                    print('Загрузка обновления завершена.')
+                                                    sampAddChatMessage('[Информация] {FFFFFF}Обновление завершено!', 0x96FF00)
+                                                    lua_thread.create(function() wait(500) thisScript():reload() end)
+                                                end
+                                            end
+                                        )
+                                    else
+                                        if not update_notified then
+                                            sampAddChatMessage('[Информация] {FFFFFF}Доступно обновление. Нажмите кнопку "Проверка обновления" для обновления.', 0x96FF00)
+                                            update_notified = true
+                                        end
+                                    end
+                                end
+                            else
+                                update_available = false
+                                if manual then
+                                    sampAddChatMessage('[Информация] {FFFFFF}У вас актуальная версия скрипта.', 0x96FF00)
+                                end
+                            end
+                        else
+                            sampAddChatMessage('[Информация] {FF6347}Ошибка проверки обновления. Свяжитесь с разработчиком.', 0x96FF00)
+                        end
+                    else
+                        sampAddChatMessage('[Информация] {FF6347}Не удалось проверить обновление. Свяжитесь с разработчиком.', 0x96FF00)
+                    end
+                else
+                    sampAddChatMessage('[Информация] {FF6347}Не удалось проверить обновление. Свяжитесь с разработчиком.', 0x96FF00)
+                end
+            end
+            update_check_running = false
+        end)
+    end)
+end
 
 local isInventoryTextdrawValid, clickInventoryTextdraw, safeClick, textdrawExists
 
@@ -344,9 +386,8 @@ function main()
 	if not isSampLoaded() or not isSampfuncsLoaded() then return end
 	while not isSampAvailable() do wait(100) end
 	
-	if auto_update and auto_update[0] then
-		autoupdate("https://raw.githubusercontent.com/HentaikaZ/sawnoff/refs/heads/main/autoupdate.json", '[Sawnoff]: ', "https://github.com/HentaikaZ/sawnoff.git")
-	end
+	-- Always check for updates (auto_update setting is handled inside)
+	checkForUpdate(false)
 	
 	sampRegisterChatCommand('sawnoff', function() main_window[0] = not main_window[0] end)
 	
@@ -721,13 +762,6 @@ imgui.OnFrame(function() return main_window[0] and not isPauseMenuActive() end, 
 	else
 		if cfg.settings.auto_swap ~= auto_swap[0] then cfg.settings.auto_swap = false; inicfg.save(cfg, 'sawnoff_auto_collector.ini') end
 	end
-	imgui.SameLine()
-	imgui.Checkbox(u8' CEF Инвентарь', cef)
-	if cef[0] then
-		if cfg.settings.cef ~= cef[0] then cfg.settings.cef = true; inicfg.save(cfg, 'sawnoff_auto_collector.ini') end
-	else
-		if cfg.settings.cef ~= cef[0] then cfg.settings.cef = false; inicfg.save(cfg, 'sawnoff_auto_collector.ini') end
-	end
 	
 	imgui.Checkbox(u8' Авто смена на обрез после КД', auto_cycle_cd)
 	if auto_cycle_cd[0] then
@@ -738,13 +772,6 @@ imgui.OnFrame(function() return main_window[0] and not isPauseMenuActive() end, 
 	else
 		if cfg.settings.auto_cycle_cd ~= auto_cycle_cd[0] then cfg.settings.auto_cycle_cd = false; inicfg.save(cfg, 'sawnoff_auto_collector.ini') end
 		cycle_thread_running = false
-	end
-	imgui.SameLine()
-	imgui.Checkbox(u8' Debug', debug_mode)
-	if debug_mode[0] then
-		if cfg.settings.dbg ~= debug_mode[0] then cfg.settings.dbg = true; inicfg.save(cfg, 'sawnoff_auto_collector.ini') end
-	else
-		if cfg.settings.dbg ~= debug_mode[0] then cfg.settings.dbg = false; inicfg.save(cfg, 'sawnoff_auto_collector.ini') end
 	end
 	
 	imgui.Checkbox(u8' Автообновление', auto_update)
@@ -758,6 +785,22 @@ imgui.OnFrame(function() return main_window[0] and not isPauseMenuActive() end, 
 			cfg.settings.auto_update = false
 			inicfg.save(cfg, 'sawnoff_auto_collector.ini')
 		end
+	end
+
+	imgui.SameLine()
+	imgui.Checkbox(u8' CEF Инвентарь', cef)
+	if cef[0] then
+		if cfg.settings.cef ~= cef[0] then cfg.settings.cef = true; inicfg.save(cfg, 'sawnoff_auto_collector.ini') end
+	else
+		if cfg.settings.cef ~= cef[0] then cfg.settings.cef = false; inicfg.save(cfg, 'sawnoff_auto_collector.ini') end
+	end
+
+	imgui.SameLine()
+	imgui.Checkbox(u8' Debug', debug_mode)
+	if debug_mode[0] then
+		if cfg.settings.dbg ~= debug_mode[0] then cfg.settings.dbg = true; inicfg.save(cfg, 'sawnoff_auto_collector.ini') end
+	else
+		if cfg.settings.dbg ~= debug_mode[0] then cfg.settings.dbg = false; inicfg.save(cfg, 'sawnoff_auto_collector.ini') end
 	end
 	
 	imgui.InputInt(u8' ID модели предмета', alt_model_id, 0, 0)
@@ -798,7 +841,7 @@ imgui.OnFrame(function() return main_window[0] and not isPauseMenuActive() end, 
 		imgui.PushStyleColor(imgui.Col.ButtonHovered, imgui.ImVec4(0.00, 0.66, 0.00, 1.00))
 		imgui.PushStyleColor(imgui.Col.ButtonActive, imgui.ImVec4(0.00, 0.50, 0.00, 1.00))
 	end
-	if imgui.Button(work and u8'Выключить' or u8'Включить', imgui.ImVec2(192, 30)) then 
+	if imgui.Button(work and u8'Выключить' or u8'Включить', imgui.ImVec2(170, 30)) then 
 		if not work then
 			if cfg.settings.connected and sampGetGamestate() == 3 and sampIsLocalPlayerSpawned() then
 				work = true
@@ -822,7 +865,12 @@ imgui.OnFrame(function() return main_window[0] and not isPauseMenuActive() end, 
 	end
 	imgui.PopStyleColor(3)
 	
-	if imgui.Button(u8'Ryodan famq <3', imgui.ImVec2(193, 30), imgui.SameLine()) then
+	imgui.SameLine()
+	if imgui.Button(u8'Проверка обновления', imgui.ImVec2(170, 30)) then
+		checkForUpdate(true)
+	end
+	imgui.SameLine()
+	if imgui.Button(u8'Ryodan famq <3', imgui.ImVec2(170, 30)) then
 		os.execute(('explorer.exe "%s"'):format('https://parad1st.github.io/Screamer/'))
 	end
 	
