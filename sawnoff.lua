@@ -1,5 +1,5 @@
 script_name("Sawnoff")
-script_version("1.0.3")
+script_version("1.0.4")
 script_author('SAKUTA')
 
 local se = require 'lib.samp.events'
@@ -424,46 +424,43 @@ function main()
 				if not sampIsLocalPlayerSpawned() and sampGetGamestate() == 3 then
 					work = false
 				else
-					-- Подготовительная часть (открытие инвентаря и поиск предметов) – выполняется всегда
-					if first_start and timer and timer[0] then
-						if timer_time and timer_time[0] and timer_time[0] > 0 then
-						    wait(timer_time[0] * 60000)
-						    timer_time[0] = 0
-						end
-					end	
-					if first_start then
-						if targetId and targetId > 0 then findItemById(inventory, targetId) end
-						if alt_model_id and alt_model_id[0] and alt_model_id[0] > 0 then FindAltItem(inventory, alt_model_id[0]) end
-						sampSendClickTextdraw(65535)
-						sampAddChatMessage('[Информация] {FFFFFF}Сейчас откроется инвентарь.', 0x96FF00)
-					elseif not first_start and open_inventory and not open_inventory[0] then
-						if targetId and targetId > 0 then findItemById(inventory, targetId) end
-						if alt_model_id and alt_model_id[0] and alt_model_id[0] > 0 then FindAltItem(inventory, alt_model_id[0]) end
-						sampSendClickTextdraw(65535)
-						sampAddChatMessage('[Информация] {FFFFFF}Сейчас откроется инвентарь.', 0x96FF00)
-					end
-					wait(333)
-					inventory_fix = true
-					wait(333)
-					if first_start then
-						if targetId and targetId > 0 then findItemById(inventory, targetId) end
-						if alt_model_id and alt_model_id[0] and alt_model_id[0] > 0 then FindAltItem(inventory, alt_model_id[0]) end
-						sampSendChat('/invent')
-					elseif not first_start and open_inventory and not open_inventory[0] then
-						if targetId and targetId > 0 then findItemById(inventory, targetId) end
-						if alt_model_id and alt_model_id[0] and alt_model_id[0] > 0 then FindAltItem(inventory, alt_model_id[0]) end
-						sampSendChat('/invent')
-					elseif not first_start and open_inventory and open_inventory[0] and not isInventoryTextdrawValid() then
-						if targetId and targetId > 0 then findItemById(inventory, targetId) end
-						if alt_model_id and alt_model_id[0] and alt_model_id[0] > 0 then FindAltItem(inventory, alt_model_id[0]) end
-						sampSendChat('/invent')
-					end
-
-					-- Развилка: если включён автоцикл с альтом – ничего не делаем (ждём), всё делает отдельный поток
 					if auto_cycle_cd and auto_cycle_cd[0] then
 						wait(1000)
 					else
-						-- Старый код сбора (без автоцикла)
+						if first_start and timer and timer[0] then
+							if timer_time and timer_time[0] and timer_time[0] > 0 then
+								wait(timer_time[0] * 60000)
+								timer_time[0] = 0
+							end
+						end	
+						if first_start then
+							if targetId and targetId > 0 then findItemById(inventory, targetId) end
+							if alt_model_id and alt_model_id[0] and alt_model_id[0] > 0 then FindAltItem(inventory, alt_model_id[0]) end
+							sampSendClickTextdraw(65535)
+							sampAddChatMessage('[Информация] {FFFFFF}Сейчас откроется инвентарь.', 0x96FF00)
+						elseif not first_start and open_inventory and not open_inventory[0] then
+							if targetId and targetId > 0 then findItemById(inventory, targetId) end
+							if alt_model_id and alt_model_id[0] and alt_model_id[0] > 0 then FindAltItem(inventory, alt_model_id[0]) end
+							sampSendClickTextdraw(65535)
+							sampAddChatMessage('[Информация] {FFFFFF}Сейчас откроется инвентарь.', 0x96FF00)
+						end
+						wait(333)
+						inventory_fix = true
+						wait(333)
+						if first_start then
+							if targetId and targetId > 0 then findItemById(inventory, targetId) end
+							if alt_model_id and alt_model_id[0] and alt_model_id[0] > 0 then FindAltItem(inventory, alt_model_id[0]) end
+							sampSendChat('/invent')
+						elseif not first_start and open_inventory and not open_inventory[0] then
+							if targetId and targetId > 0 then findItemById(inventory, targetId) end
+							if alt_model_id and alt_model_id[0] and alt_model_id[0] > 0 then FindAltItem(inventory, alt_model_id[0]) end
+							sampSendChat('/invent')
+						elseif not first_start and open_inventory and open_inventory[0] and not isInventoryTextdrawValid() then
+							if targetId and targetId > 0 then findItemById(inventory, targetId) end
+							if alt_model_id and alt_model_id[0] and alt_model_id[0] > 0 then FindAltItem(inventory, alt_model_id[0]) end
+							sampSendChat('/invent')
+						end
+					
 						if cef and cef[0] then
 							wait(333)
 							local sawnoff_slot = findItemById(inventory, targetId)
