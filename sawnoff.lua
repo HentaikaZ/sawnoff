@@ -1,5 +1,5 @@
 script_name("Sawnoff")
-script_version("1.0.6")
+script_version("1.0.7")
 script_author('SAKUTA')
 
 local se = require 'lib.samp.events'
@@ -324,6 +324,7 @@ local function startCycleWithCD()
                             safeClick(alt[2])
                         end
                         sampAddChatMessage('[Информация] {FFFFFF}Альт-предмет одет.', 0x96FF00)
+                        wait(666)
                         sampSendClickTextdraw(65535)
                     end
                 else
