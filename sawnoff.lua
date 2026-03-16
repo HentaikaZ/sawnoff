@@ -247,14 +247,14 @@ local function startCycleWithCD()
 
             if cef and cef[0] then
                 openInventoryAndWait()
-                wait(1000)
+                wait(333)
                 
                 local sawnoff_slot = findItemById(inventory, targetId)
                 if sawnoff_slot then
                     if sawnoff_slot ~= 3 then
                         repeat
                             sampSendChat('/invent')
-                            wait(666)
+                            wait(333)
                             sawnoff_slot = findItemById(inventory, targetId)
                         until sawnoff_slot or not work
                     end
