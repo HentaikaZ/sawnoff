@@ -1,5 +1,5 @@
 script_name("Sawnoff")
-script_version("1.1.2")
+script_version("1.1.3")
 script_author('SAKUTA')
 
 local se = require 'lib.samp.events'
@@ -30,7 +30,6 @@ local cfg = inicfg.load({
     }
 }, 'sawnoff_auto_collector')
 
--- »справление конфликта при загрузке
 if cfg.settings.auto_swap and cfg.settings.auto_cycle_cd then
     cfg.settings.auto_cycle_cd = false
     inicfg.save(cfg, 'sawnoff_auto_collector.ini')
@@ -260,7 +259,7 @@ local function startCycleWithCD()
                     end
                     if sawnoff_slot == 3 then
                         send_cef('clickOnButton|{"type": 2,"slot": 3, "action": 1}')
-                        sawnoff[5] = true
+                        if sawnoff then sawnoff[5] = true end
                         delay_time = nil
                         local wait_start = os.time()
                         repeat wait(100) until delay_time ~= nil or not work or os.time() - wait_start > 10
@@ -269,7 +268,7 @@ local function startCycleWithCD()
                         send_cef('inventory.moveItemForce|{"slot": ' .. tostring(sawnoff_slot) .. ', "type": 1, "amount": 1}')
                         wait(333)
                         send_cef('clickOnButton|{"type": 2,"slot": 3, "action": 1}')
-                        sawnoff[5] = true
+                        if sawnoff then sawnoff[5] = true end
                         delay_time = nil
                         local wait_start = os.time()
                         repeat wait(100) until delay_time ~= nil or not work or os.time() - wait_start > 10
@@ -311,9 +310,9 @@ local function startCycleWithCD()
                     repeat
                         wait(100)
                         if not work then break end
-                    until (sawnoff and (textdrawExists(sawnoff.textdraw_put_id) or textdrawExists(sawnoff.textdraw_use_id))) or os.time() - wait_start > 3
+                    until (sawnoff and (sawnoff.textdraw_put_id and sampTextdrawIsExists(sawnoff.textdraw_put_id) or sawnoff.textdraw_use_id and sampTextdrawIsExists(sawnoff.textdraw_use_id))) or os.time() - wait_start > 3
                     
-                    if sawnoff and sawnoff.textdraw_put_id and textdrawExists(sawnoff.textdraw_put_id) then
+                    if sawnoff and sawnoff.textdraw_put_id and sampTextdrawIsExists(sawnoff.textdraw_put_id) then
                         safeClick(sawnoff.textdraw_put_id)
                         wait(1000)
                         safeClick(sawnoff.textdraw_id)
@@ -321,20 +320,19 @@ local function startCycleWithCD()
                         repeat
                             wait(100)
                             if not work then break end
-                        until (sawnoff and sawnoff.textdraw_use_id and textdrawExists(sawnoff.textdraw_use_id)) or os.time() - wait_start > 3
+                        until (sawnoff and sawnoff.textdraw_use_id and sampTextdrawIsExists(sawnoff.textdraw_use_id)) or os.time() - wait_start > 3
                     end
                     
-                    if sawnoff and sawnoff.textdraw_use_id and textdrawExists(sawnoff.textdraw_use_id) then
+                    if sawnoff and sawnoff.textdraw_use_id and sampTextdrawIsExists(sawnoff.textdraw_use_id) then
                         safeClick(sawnoff.textdraw_use_id)
                         wait(500)
-                        sawnoff[5] = true
+                        if sawnoff then sawnoff[5] = true end
                     else
                         sampAddChatMessage('[»нформаци€] {FF6347}Ќе удалось использовать обрез.', 0x96FF00)
                     end
 
                     wait(666)
                     
-                    -- —разу после использовани€ надеваем альт (не ждЄм  ƒ)
                     if alt and alt[1] and sampTextdrawIsExists(alt[1]) then
                         safeClick(alt[1])
                         wait(500)
@@ -342,7 +340,7 @@ local function startCycleWithCD()
                             safeClick(alt[2])
                             wait(500)
                             sampAddChatMessage('[»нформаци€] {FFFFFF}јльт-предмет одет.', 0x96FF00)
-                            sawnoff[5] = false
+                            if sawnoff then sawnoff[5] = false end
                         else
                             sampAddChatMessage('[»нформаци€] {FF6347} нопка PUT дл€ альта не найдена.', 0x96FF00)
                         end
@@ -407,7 +405,6 @@ function se.onServerMessage(color, text)
         end
     end
 end
-
 
 function main()
     if not isSampLoaded() or not isSampfuncsLoaded() then return end
@@ -486,7 +483,7 @@ function main()
                             end
                             if sawnoff_slot == 3 then
                                 send_cef('clickOnButton|{"type": 2,"slot": 3, "action": 1}')
-                                sawnoff[5] = true
+                                if sawnoff then sawnoff[5] = true end
                                 delay_time = nil
                                 local wait_start = os.time()
                                 repeat wait(100) until delay_time ~= nil or not work or os.time() - wait_start > 10
@@ -495,7 +492,7 @@ function main()
                                 send_cef('inventory.moveItemForce|{"slot": ' .. tostring(sawnoff_slot) .. ', "type": 1, "amount": 1}')
                                 wait(333)
                                 send_cef('clickOnButton|{"type": 2,"slot": 3, "action": 1}')
-                                sawnoff[5] = true
+                                if sawnoff then sawnoff[5] = true end
                                 delay_time = nil
                                 local wait_start = os.time()
                                 repeat wait(100) until delay_time ~= nil or not work or os.time() - wait_start > 10
@@ -506,7 +503,6 @@ function main()
                         repeat wait(1) until not work or isInventoryTextdrawValid()
                         wait(666)
                         
-                        -- ќжидаем текстдрав обреза до 5 секунд
                         local wait_start = os.time()
                         repeat
                             wait(100)
@@ -514,19 +510,19 @@ function main()
                         until (sawnoff and sawnoff.textdraw_id and sampTextdrawIsExists(sawnoff.textdraw_id)) or os.time() - wait_start > 5
                         
                         if sawnoff and sawnoff.textdraw_id and sampTextdrawIsExists(sawnoff.textdraw_id) then
-                            sawnoff[5] = true
+                            if sawnoff then sawnoff[5] = true end
                             repeat
-                                safeClick(sawnoff.textdraw_id)
-                                repeat wait(1) until (sawnoff and (textdrawExists(sawnoff.textdraw_put_id) or textdrawExists(sawnoff.textdraw_use_id))) or not work
+                                if sawnoff and sawnoff.textdraw_id then safeClick(sawnoff.textdraw_id) end
+                                repeat wait(1) until (sawnoff and (sawnoff.textdraw_put_id and sampTextdrawIsExists(sawnoff.textdraw_put_id) or sawnoff.textdraw_use_id and sampTextdrawIsExists(sawnoff.textdraw_use_id))) or not work
                                 wait(500)
                                 if sawnoff and sawnoff[4] == false then
-                                    safeClick(sawnoff.textdraw_put_id)
+                                    if sawnoff and sawnoff.textdraw_put_id then safeClick(sawnoff.textdraw_put_id) end
                                     wait(1000)
-                                    safeClick(sawnoff.textdraw_id)
-                                    repeat wait(1) until (sawnoff and (textdrawExists(sawnoff.textdraw_put_id) or textdrawExists(sawnoff.textdraw_use_id))) or not work
+                                    if sawnoff and sawnoff.textdraw_id then safeClick(sawnoff.textdraw_id) end
+                                    repeat wait(1) until (sawnoff and (sawnoff.textdraw_put_id and sampTextdrawIsExists(sawnoff.textdraw_put_id) or sawnoff.textdraw_use_id and sampTextdrawIsExists(sawnoff.textdraw_use_id))) or not work
                                     wait(500)
                                 end
-                                safeClick(sawnoff.textdraw_use_id)
+                                if sawnoff and sawnoff.textdraw_use_id then safeClick(sawnoff.textdraw_use_id) end
                                 wait(500)
                             until sawnoff and sawnoff[5] == false or not work
                         else
@@ -637,25 +633,33 @@ function se.onShowTextDraw(id, data)
     if data.modelId and data.rotation then
         if data.modelId == 350 and data.rotation.x == -20 and data.rotation.y == 0 and data.rotation.z == 75 and 
            (data.backgroundColor == -13469276 or data.backgroundColor == -13149076) then
-            sawnoff.textdraw_id = id
+            if sawnoff then sawnoff.textdraw_id = id end
         end
     end
     
     if alt_model_id and alt_model_id[0] and data.modelId == alt_model_id[0] then
-        alt[1] = id
+        if alt then alt[1] = id end
     end
     
     if text == 'PUT' or text == 'HAГEПТ' then
-        sawnoff[4] = false
-        sawnoff.textdraw_put_id = id + 1
-        alt[4] = false
-        alt[2] = id + 1
+        if sawnoff then
+            sawnoff[4] = false
+            sawnoff.textdraw_put_id = id + 1
+        end
+        if alt then
+            alt[4] = false
+            alt[2] = id + 1
+        end
     end
     if text == 'USE' or text == 'ЕCМOЗТИOЛAПТ' then
-        sawnoff[4] = true
-        sawnoff.textdraw_use_id = id + 1
-        alt[4] = true
-        alt[3] = id + 1
+        if sawnoff then
+            sawnoff[4] = true
+            sawnoff.textdraw_use_id = id + 1
+        end
+        if alt then
+            alt[4] = true
+            alt[3] = id + 1
+        end
     end
 end
 
@@ -779,7 +783,6 @@ imgui.OnFrame(function() return main_window and main_window[0] and not isPauseMe
     imgui.PopItemWidth()
     imgui.Separator()
     
-    -- Ѕлокировка одновременного включени€
     local swap_old = auto_swap and auto_swap[0]
     local cycle_old = auto_cycle_cd and auto_cycle_cd[0]
     
@@ -966,20 +969,20 @@ function swapToAlt(scheduleReturn)
                     wait(1000)
                 until not work or isInventoryTextdrawValid()
             end
-            alt[5] = true
-            safeClick(alt[1])
+            if alt then alt[5] = true end
+            if alt[1] then safeClick(alt[1]) end
             local waited = 0
             local opt = nil
             repeat
-                if alt[3] and sampTextdrawIsExists(alt[3]) then opt = 'use'; break end
-                if alt[2] and sampTextdrawIsExists(alt[2]) then opt = 'put'; break end
+                if alt[3] and alt[3] and sampTextdrawIsExists(alt[3]) then opt = 'use'; break end
+                if alt[2] and alt[2] and sampTextdrawIsExists(alt[2]) then opt = 'put'; break end
                 wait(100)
                 waited = waited + 100
             until waited > 2000
             if opt == 'use' then
-                safeClick(alt[3])
+                if alt[3] then safeClick(alt[3]) end
             elseif opt == 'put' then
-                safeClick(alt[2])
+                if alt[2] then safeClick(alt[2]) end
             end
             wait(500)
             if open_inventory and not open_inventory[0] then sampSendClickTextdraw(65535) end
@@ -1003,7 +1006,7 @@ function swapToSawnoff()
         wait(333)
         local sawnoff_slot = findItemById(inventory, targetId)
         if sawnoff_slot then
-            sawnoff[5] = true
+            if sawnoff then sawnoff[5] = true end
             if sawnoff_slot == 3 then
                 send_cef('clickOnButton|{"type": 2,"slot": 3, "action": 1}')
                 sampAddChatMessage('[»нформаци€] {FFFFFF}¬ернулс€ предмет Sawnoff [CEF].', 0x96FF00)
@@ -1020,14 +1023,14 @@ function swapToSawnoff()
         end
     else
         openInventoryAndWait()
-        if sawnoff and sawnoff.textdraw_id ~= nil then
+        if sawnoff and sawnoff.textdraw_id ~= nil and sampTextdrawIsExists(sawnoff.textdraw_id) then
             if not isInventoryTextdrawValid() then
                 repeat
                     sampSendChat('/invent')
                     wait(1000)
                 until not work or isInventoryTextdrawValid()
             end
-            sawnoff[5] = true
+            if sawnoff then sawnoff[5] = true end
             safeClick(sawnoff.textdraw_id)
             local waited = 0
             local opt = nil
@@ -1038,9 +1041,9 @@ function swapToSawnoff()
                 waited = waited + 100
             until waited > 2000
             if opt == 'use' then
-                safeClick(sawnoff.textdraw_use_id)
+                if sawnoff.textdraw_use_id then safeClick(sawnoff.textdraw_use_id) end
             elseif opt == 'put' then
-                safeClick(sawnoff.textdraw_put_id)
+                if sawnoff.textdraw_put_id then safeClick(sawnoff.textdraw_put_id) end
             end
             wait(500)
             if open_inventory and not open_inventory[0] then sampSendClickTextdraw(65535) end
@@ -1113,10 +1116,11 @@ end
 
 function se.onApplyPlayerAnimation(playerId, animLib, animName, frameDelta, loop, lockX, lockY, freeze, time)
     if work and sawnoff and sawnoff[5] then
-        if playerPed then
-            local _, id = sampGetPlayerIdByCharHandle(playerPed)
-            if playerId == id and animLib == 'BOMBER' then
-                sawnoff[5] = false
+        local myPed = getPlayerPed()
+        if myPed then
+            local _, myId = sampGetPlayerIdByCharHandle(myPed)
+            if myId and playerId == myId and animLib == 'BOMBER' then
+                if sawnoff then sawnoff[5] = false end
             end
         end
     end
