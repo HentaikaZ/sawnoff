@@ -1,5 +1,5 @@
 script_name("Sawnoff")
-script_version("1.0.7")
+script_version("1.1.1")
 script_author('SAKUTA')
 
 local se = require 'lib.samp.events'
@@ -237,18 +237,20 @@ local function startCycleWithCD()
     
     lua_thread.create(function()
         while work and auto_cycle_cd and auto_cycle_cd[0] do
-            if isPayDayBlocked() then
-                local wait_time = getPayDayUnlockTime()
-                sampAddChatMessage(string.format('[Информация] {FFFFFF}Смена на обрез отменена из-за приближения {FF6347}PayDay!{FFFFFF} Подождите {FF6347}%d сек.', wait_time), 0x96FF00)
-                wait(wait_time * 1000)
+            if not (sawnoff and sawnoff[5]) then
+                if isPayDayBlocked() then
+                    local wait_time = getPayDayUnlockTime()
+                    sampAddChatMessage(string.format('[Информация] {FFFFFF}Ожидание окончания {FF6347}PayDay{FFFFFF} перед сменой на обрез: {FF6347}%d сек.', wait_time), 0x96FF00)
+                    wait(wait_time * 1000)
+                end
             end
-            
+
             if cef and cef[0] then
                 openInventoryAndWait()
                 wait(1000)
                 
                 local sawnoff_slot = findItemById(inventory, targetId)
-                if sawnoff_slot ~= nil then
+                if sawnoff_slot then
                     if sawnoff_slot ~= 3 then
                         repeat
                             sampSendChat('/invent')
@@ -263,7 +265,7 @@ local function startCycleWithCD()
                         local wait_start = os.time()
                         repeat wait(100) until delay_time ~= nil or not work or os.time() - wait_start > 10
                         if delay_time == nil then delay_time = 60 end
-                    elseif sawnoff_slot and type(sawnoff_slot) == 'number' then
+                    else
                         send_cef('inventory.moveItemForce|{"slot": ' .. tostring(sawnoff_slot) .. ', "type": 1, "amount": 1}')
                         wait(333)
                         send_cef('clickOnButton|{"type": 2,"slot": 3, "action": 1}')
@@ -288,11 +290,14 @@ local function startCycleWithCD()
                 else
                     sampAddChatMessage('[Информация] {FF6347}Альт-предмет не найден. [CEF]', 0x96FF00)
                 end
+                
+                if open_inventory and not open_inventory[0] then
+                    sampSendClickTextdraw(65535)
+                end
             else
                 openInventoryAndWait()
                 wait(666)
                 
-                -- Ожидаем появления текстдрава обреза (до 5 секунд)
                 local wait_start = os.time()
                 repeat
                     wait(100)
@@ -301,34 +306,55 @@ local function startCycleWithCD()
                 
                 if sawnoff and sawnoff.textdraw_id and sampTextdrawIsExists(sawnoff.textdraw_id) then
                     safeClick(sawnoff.textdraw_id)
-                    wait(500)
                     
-                    if sawnoff.textdraw_use_id and sampTextdrawIsExists(sawnoff.textdraw_use_id) then
-                        safeClick(sawnoff.textdraw_use_id)
-                        sawnoff[5] = true
-                        sampAddChatMessage('[Информация] {FFFFFF}Обрез использован.', 0x96FF00)
+                    wait_start = os.time()
+                    repeat
+                        wait(100)
+                        if not work then break end
+                    until (sawnoff and (textdrawExists(sawnoff.textdraw_put_id) or textdrawExists(sawnoff.textdraw_use_id))) or os.time() - wait_start > 3
+                    
+                    if sawnoff and sawnoff.textdraw_put_id and textdrawExists(sawnoff.textdraw_put_id) then
+                        safeClick(sawnoff.textdraw_put_id)
+                        wait(1000)
+                        safeClick(sawnoff.textdraw_id)
+                        wait_start = os.time()
+                        repeat
+                            wait(100)
+                            if not work then break end
+                        until (sawnoff and sawnoff.textdraw_use_id and textdrawExists(sawnoff.textdraw_use_id)) or os.time() - wait_start > 3
                     end
                     
-                    delay_time = nil
-                    wait_start = os.time()
-                    repeat 
-                        wait(100) 
-                        if not work then break end
-                    until delay_time ~= nil or os.time() - wait_start > 10
+                    if sawnoff and sawnoff.textdraw_use_id and textdrawExists(sawnoff.textdraw_use_id) then
+                        safeClick(sawnoff.textdraw_use_id)
+                        wait(500)
+                        sawnoff[5] = true
+                    else
+                        sampAddChatMessage('[Информация] {FF6347}Не удалось использовать обрез.', 0x96FF00)
+                    end
+
+                    wait(666)
                     
-                    wait(500)
-                    if alt and alt[1] then
+                    -- Сразу после использования надеваем альт (не ждём КД)
+                    if alt and alt[1] and sampTextdrawIsExists(alt[1]) then
                         safeClick(alt[1])
                         wait(500)
-                        if alt[2] and sampTextdrawIsExists(alt[2]) then
+                        if alt and alt[2] and sampTextdrawIsExists(alt[2]) then
                             safeClick(alt[2])
+                            wait(500)
+                            sampAddChatMessage('[Информация] {FFFFFF}Альт-предмет одет.', 0x96FF00)
+                            sawnoff[5] = false
+                        else
+                            sampAddChatMessage('[Информация] {FF6347}Кнопка PUT для альта не найдена.', 0x96FF00)
                         end
-                        sampAddChatMessage('[Информация] {FFFFFF}Альт-предмет одет.', 0x96FF00)
-                        wait(666)
+                    else
+                        sampAddChatMessage('[Информация] {FF6347}Альт-предмет не найден.', 0x96FF00)
+                    end
+                    
+                    if open_inventory and not open_inventory[0] then
                         sampSendClickTextdraw(65535)
                     end
                 else
-                    sampAddChatMessage('[Информация] {FF6347}Не удалось найти текстдрав обреза. Попытка будет повторена.', 0x96FF00)
+                    sampAddChatMessage('[Информация] {FF6347}Не удалось найти иконку обреза. Попытка позже.', 0x96FF00)
                 end
             end
             
@@ -341,15 +367,8 @@ local function startCycleWithCD()
                 local check_interval = 5000
                 
                 while elapsed < total_wait and work and auto_cycle_cd and auto_cycle_cd[0] do
-                    if isPayDayBlocked() then
-                        local wait_time = getPayDayUnlockTime()
-                        sampAddChatMessage(string.format('[Информация] {FFFFFF}Ожидание прервано из-за {FF6347}PayDay!{FFFFFF} Пауза {FF6347}%d сек.', wait_time), 0x96FF00)
-                        wait(wait_time * 1000)
-                        elapsed = 0
-                    else
-                        wait(math.min(check_interval, total_wait - elapsed))
-                        elapsed = elapsed + check_interval
-                    end
+                    wait(math.min(check_interval, total_wait - elapsed))
+                    elapsed = elapsed + check_interval
                 end
                 
                 delay_time = nil
@@ -361,15 +380,8 @@ local function startCycleWithCD()
                 local check_interval = 5000
                 
                 while elapsed < total_wait and work and auto_cycle_cd and auto_cycle_cd[0] do
-                    if isPayDayBlocked() then
-                        local wait_time = getPayDayUnlockTime()
-                        sampAddChatMessage(string.format('[Информация] {FFFFFF}Ожидание прервано из-за {FF6347}PayDay!{FFFFFF} Пауза {FF6347}%d сек.', wait_time), 0x96FF00)
-                        wait(wait_time * 1000)
-                        elapsed = 0
-                    else
-                        wait(math.min(check_interval, total_wait - elapsed))
-                        elapsed = elapsed + check_interval
-                    end
+                    wait(math.min(check_interval, total_wait - elapsed))
+                    elapsed = elapsed + check_interval
                 end
             end
             
@@ -380,6 +392,22 @@ local function startCycleWithCD()
         cycle_thread_running = false
     end)
 end
+
+function se.onServerMessage(color, text)
+    if work then
+        if text:find('Для использования этого аксессуара должно пройти ещё (.+) минут!') then
+            delay_time = text:match('Для использования этого аксессуара должно пройти ещё (.+) минут!')
+            if sawnoff then sawnoff[5] = false end
+            first_start = true
+        end
+        if text:find('Воспользуйте мастерской по ремонту одежды для восстановления состояния аксессуара!') then
+            sampAddChatMessage('[Информация] {FFFFFF}Аксессуар "Обрез" {FF6347}Сломался! {FFFFFF}Скрипт {FF6347}выключен.', 0x96FF00)
+            thisScript():reload()
+            work = false
+        end
+    end
+end
+
 
 function main()
     if not isSampLoaded() or not isSampfuncsLoaded() then return end
@@ -1080,23 +1108,6 @@ function se.onShowDialog(dialogId, style, title, button1, button2, text)
     if title:find('Информация об аренде') then
         sampAddChatMessage('[Информация] {FFFFFF}Аксессуар "Обрез" находиться в {FF6347}Аренде! {FFFFFF}Скрипт {FF6347}выключен.', 0x96FF00)
         work = false
-    end
-end
-
-function se.onServerMessage(color, text)
-    if work and sawnoff and sawnoff[5] then
-        if text:find('Для использования этого аксессуара должно пройти ещё (.+) минут!') then
-            delay_time = text:match('Для использования этого аксессуара должно пройти ещё (.+) минут!')
-            sawnoff[5] = false
-            first_start = true
-        end
-    end
-    if work then
-        if text:find('Воспользуйте мастерской по ремонту одежды для восстановления состояния аксессуара!') then
-            sampAddChatMessage('[Информация] {FFFFFF}Аксессуар "Обрез" {FF6347}Сломался! {FFFFFF}Скрипт {FF6347}выключен.', 0x96FF00)
-            thisScript():reload()
-            work = false
-        end
     end
 end
 
