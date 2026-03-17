@@ -1,5 +1,5 @@
 script_name("Sawnoff")
-script_version("1.1.4")
+script_version("1.1.5")
 script_author('SAKUTA')
 
 local se = require 'lib.samp.events'
@@ -236,9 +236,9 @@ local function startCycleWithCD()
     
     lua_thread.create(function()
         while work and auto_cycle_cd and auto_cycle_cd[0] do
-            -- локальные копии для защиты от изменений
-            local sawnoff_local = sawnoff
-            local alt_local = alt
+            -- локальные копии с проверкой типа
+            local sawnoff_local = (type(sawnoff) == 'table') and sawnoff or nil
+            local alt_local = (type(alt) == 'table') and alt or nil
             
             if not (sawnoff_local and sawnoff_local[5]) then
                 if isPayDayBlocked() then
@@ -301,6 +301,12 @@ local function startCycleWithCD()
                 openInventoryAndWait()
                 wait(666)
                 
+                if not (sawnoff_local and sawnoff_local.textdraw_id) then
+                    sampAddChatMessage('[Информация] {FF6347}Не удалось найти иконку обреза (нет данных). Попытка позже.', 0x96FF00)
+                    wait(5000)
+                    goto continue_loop
+                end
+                
                 local wait_start = os.time()
                 repeat
                     wait(100)
@@ -360,6 +366,7 @@ local function startCycleWithCD()
                 end
             end
             
+            ::continue_loop::
             if delay_time then
                 local wait_minutes = tonumber(delay_time) or 60
                 sampAddChatMessage(string.format('[Информация] {FFFFFF}Ожидание КД: {FFD700}%d {FFFFFF}минут.', wait_minutes), 0x96FF00)
@@ -397,7 +404,7 @@ end
 
 function se.onServerMessage(color, text)
     if work then
-        if text and text:find('Для использования этого аксессуара должно пройти ещё (.+) минут!') then
+        if text and type(text) == 'string' and text:find('Для использования этого аксессуара должно пройти ещё (.+) минут!') then
             local minutes = text:match('Для использования этого аксессуара должно пройти ещё (.+) минут!')
             if minutes then
                 delay_time = minutes
@@ -405,9 +412,8 @@ function se.onServerMessage(color, text)
                 first_start = true
             end
         end
-        if text and text:find('Воспользуйте мастерской по ремонту одежды для восстановления состояния аксессуара!') then
+        if text and type(text) == 'string' and text:find('Воспользуйте мастерской по ремонту одежды для восстановления состояния аксессуара!') then
             sampAddChatMessage('[Информация] {FFFFFF}Аксессуар "Обрез" {FF6347}Сломался! {FFFFFF}Скрипт {FF6347}выключен.', 0x96FF00)
-            thisScript():reload()
             work = false
         end
     end
@@ -911,7 +917,7 @@ imgui.OnFrame(function() return main_window and main_window[0] and not isPauseMe
             end
         else
             sampSendClickTextdraw(65535)
-            thisScript():reload()
+            work = false
             sampAddChatMessage('[Информация] {FFFFFF}Автоматический сбор обреза: {FF6347}выключен{FFFFFF}.', 0x96FF00)
         end
     end
@@ -974,7 +980,7 @@ function swapToAlt(scheduleReturn)
         end
     else
         openInventoryAndWait()
-        if alt and type(alt) == 'table' and alt[1] ~= nil then
+        if alt and type(alt) == 'table' and alt[1] ~= nil and sampTextdrawIsExists(alt[1]) then
             if not isInventoryTextdrawValid() then
                 repeat
                     sampSendChat('/invent')
@@ -982,12 +988,12 @@ function swapToAlt(scheduleReturn)
                 until not work or isInventoryTextdrawValid()
             end
             if alt then alt[5] = true end
-            if alt[1] then safeClick(alt[1]) end
+            safeClick(alt[1])
             local waited = 0
             local opt = nil
             repeat
-                if alt[3] and alt[3] and sampTextdrawIsExists(alt[3]) then opt = 'use'; break end
-                if alt[2] and alt[2] and sampTextdrawIsExists(alt[2]) then opt = 'put'; break end
+                if alt[3] and sampTextdrawIsExists(alt[3]) then opt = 'use'; break end
+                if alt[2] and sampTextdrawIsExists(alt[2]) then opt = 'put'; break end
                 wait(100)
                 waited = waited + 100
             until waited > 2000
@@ -1035,7 +1041,7 @@ function swapToSawnoff()
         end
     else
         openInventoryAndWait()
-        if sawnoff and type(sawnoff) == 'table' and sawnoff.textdraw_id ~= nil and sampTextdrawIsExists(sawnoff.textdraw_id) then
+        if sawnoff and type(sawnoff) == 'table' and sawnoff.textdraw_id and sampTextdrawIsExists(sawnoff.textdraw_id) then
             if not isInventoryTextdrawValid() then
                 repeat
                     sampSendChat('/invent')
