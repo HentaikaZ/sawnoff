@@ -1,5 +1,5 @@
 script_name("Sawnoff")
-script_version("1.1.3")
+script_version("1.1.4")
 script_author('SAKUTA')
 
 local se = require 'lib.samp.events'
@@ -236,7 +236,11 @@ local function startCycleWithCD()
     
     lua_thread.create(function()
         while work and auto_cycle_cd and auto_cycle_cd[0] do
-            if not (sawnoff and sawnoff[5]) then
+            -- локальные копии для защиты от изменений
+            local sawnoff_local = sawnoff
+            local alt_local = alt
+            
+            if not (sawnoff_local and sawnoff_local[5]) then
                 if isPayDayBlocked() then
                     local wait_time = getPayDayUnlockTime()
                     sampAddChatMessage(string.format('[Информация] {FFFFFF}Ожидание окончания {FF6347}PayDay{FFFFFF} перед сменой на обрез: {FF6347}%d сек.', wait_time), 0x96FF00)
@@ -259,7 +263,7 @@ local function startCycleWithCD()
                     end
                     if sawnoff_slot == 3 then
                         send_cef('clickOnButton|{"type": 2,"slot": 3, "action": 1}')
-                        if sawnoff then sawnoff[5] = true end
+                        if sawnoff_local then sawnoff_local[5] = true end
                         delay_time = nil
                         local wait_start = os.time()
                         repeat wait(100) until delay_time ~= nil or not work or os.time() - wait_start > 10
@@ -268,7 +272,7 @@ local function startCycleWithCD()
                         send_cef('inventory.moveItemForce|{"slot": ' .. tostring(sawnoff_slot) .. ', "type": 1, "amount": 1}')
                         wait(333)
                         send_cef('clickOnButton|{"type": 2,"slot": 3, "action": 1}')
-                        if sawnoff then sawnoff[5] = true end
+                        if sawnoff_local then sawnoff_local[5] = true end
                         delay_time = nil
                         local wait_start = os.time()
                         repeat wait(100) until delay_time ~= nil or not work or os.time() - wait_start > 10
@@ -301,46 +305,46 @@ local function startCycleWithCD()
                 repeat
                     wait(100)
                     if not work then break end
-                until (sawnoff and sawnoff.textdraw_id and sampTextdrawIsExists(sawnoff.textdraw_id)) or os.time() - wait_start > 5
+                until (sawnoff_local and sawnoff_local.textdraw_id and sampTextdrawIsExists(sawnoff_local.textdraw_id)) or os.time() - wait_start > 5
                 
-                if sawnoff and sawnoff.textdraw_id and sampTextdrawIsExists(sawnoff.textdraw_id) then
-                    safeClick(sawnoff.textdraw_id)
+                if sawnoff_local and sawnoff_local.textdraw_id and sampTextdrawIsExists(sawnoff_local.textdraw_id) then
+                    safeClick(sawnoff_local.textdraw_id)
                     
                     wait_start = os.time()
                     repeat
                         wait(100)
                         if not work then break end
-                    until (sawnoff and (sawnoff.textdraw_put_id and sampTextdrawIsExists(sawnoff.textdraw_put_id) or sawnoff.textdraw_use_id and sampTextdrawIsExists(sawnoff.textdraw_use_id))) or os.time() - wait_start > 3
+                    until (sawnoff_local and (sawnoff_local.textdraw_put_id and sampTextdrawIsExists(sawnoff_local.textdraw_put_id) or sawnoff_local.textdraw_use_id and sampTextdrawIsExists(sawnoff_local.textdraw_use_id))) or os.time() - wait_start > 3
                     
-                    if sawnoff and sawnoff.textdraw_put_id and sampTextdrawIsExists(sawnoff.textdraw_put_id) then
-                        safeClick(sawnoff.textdraw_put_id)
+                    if sawnoff_local and sawnoff_local.textdraw_put_id and sampTextdrawIsExists(sawnoff_local.textdraw_put_id) then
+                        safeClick(sawnoff_local.textdraw_put_id)
                         wait(1000)
-                        safeClick(sawnoff.textdraw_id)
+                        safeClick(sawnoff_local.textdraw_id)
                         wait_start = os.time()
                         repeat
                             wait(100)
                             if not work then break end
-                        until (sawnoff and sawnoff.textdraw_use_id and sampTextdrawIsExists(sawnoff.textdraw_use_id)) or os.time() - wait_start > 3
+                        until (sawnoff_local and sawnoff_local.textdraw_use_id and sampTextdrawIsExists(sawnoff_local.textdraw_use_id)) or os.time() - wait_start > 3
                     end
                     
-                    if sawnoff and sawnoff.textdraw_use_id and sampTextdrawIsExists(sawnoff.textdraw_use_id) then
-                        safeClick(sawnoff.textdraw_use_id)
+                    if sawnoff_local and sawnoff_local.textdraw_use_id and sampTextdrawIsExists(sawnoff_local.textdraw_use_id) then
+                        safeClick(sawnoff_local.textdraw_use_id)
                         wait(500)
-                        if sawnoff then sawnoff[5] = true end
+                        if sawnoff_local then sawnoff_local[5] = true end
                     else
                         sampAddChatMessage('[Информация] {FF6347}Не удалось использовать обрез.', 0x96FF00)
                     end
 
                     wait(666)
                     
-                    if alt and alt[1] and sampTextdrawIsExists(alt[1]) then
-                        safeClick(alt[1])
+                    if alt_local and alt_local[1] and sampTextdrawIsExists(alt_local[1]) then
+                        safeClick(alt_local[1])
                         wait(500)
-                        if alt and alt[2] and sampTextdrawIsExists(alt[2]) then
-                            safeClick(alt[2])
+                        if alt_local and alt_local[2] and sampTextdrawIsExists(alt_local[2]) then
+                            safeClick(alt_local[2])
                             wait(500)
                             sampAddChatMessage('[Информация] {FFFFFF}Альт-предмет одет.', 0x96FF00)
-                            if sawnoff then sawnoff[5] = false end
+                            if sawnoff_local then sawnoff_local[5] = false end
                         else
                             sampAddChatMessage('[Информация] {FF6347}Кнопка PUT для альта не найдена.', 0x96FF00)
                         end
@@ -393,12 +397,15 @@ end
 
 function se.onServerMessage(color, text)
     if work then
-        if text:find('Для использования этого аксессуара должно пройти ещё (.+) минут!') then
-            delay_time = text:match('Для использования этого аксессуара должно пройти ещё (.+) минут!')
-            if sawnoff then sawnoff[5] = false end
-            first_start = true
+        if text and text:find('Для использования этого аксессуара должно пройти ещё (.+) минут!') then
+            local minutes = text:match('Для использования этого аксессуара должно пройти ещё (.+) минут!')
+            if minutes then
+                delay_time = minutes
+                if sawnoff and type(sawnoff) == 'table' then sawnoff[5] = false end
+                first_start = true
+            end
         end
-        if text:find('Воспользуйте мастерской по ремонту одежды для восстановления состояния аксессуара!') then
+        if text and text:find('Воспользуйте мастерской по ремонту одежды для восстановления состояния аксессуара!') then
             sampAddChatMessage('[Информация] {FFFFFF}Аксессуар "Обрез" {FF6347}Сломался! {FFFFFF}Скрипт {FF6347}выключен.', 0x96FF00)
             thisScript():reload()
             work = false
@@ -483,7 +490,7 @@ function main()
                             end
                             if sawnoff_slot == 3 then
                                 send_cef('clickOnButton|{"type": 2,"slot": 3, "action": 1}')
-                                if sawnoff then sawnoff[5] = true end
+                                if sawnoff and type(sawnoff) == 'table' then sawnoff[5] = true end
                                 delay_time = nil
                                 local wait_start = os.time()
                                 repeat wait(100) until delay_time ~= nil or not work or os.time() - wait_start > 10
@@ -492,7 +499,7 @@ function main()
                                 send_cef('inventory.moveItemForce|{"slot": ' .. tostring(sawnoff_slot) .. ', "type": 1, "amount": 1}')
                                 wait(333)
                                 send_cef('clickOnButton|{"type": 2,"slot": 3, "action": 1}')
-                                if sawnoff then sawnoff[5] = true end
+                                if sawnoff and type(sawnoff) == 'table' then sawnoff[5] = true end
                                 delay_time = nil
                                 local wait_start = os.time()
                                 repeat wait(100) until delay_time ~= nil or not work or os.time() - wait_start > 10
@@ -507,19 +514,19 @@ function main()
                         repeat
                             wait(100)
                             if not work then break end
-                        until (sawnoff and sawnoff.textdraw_id and sampTextdrawIsExists(sawnoff.textdraw_id)) or os.time() - wait_start > 5
+                        until (sawnoff and type(sawnoff) == 'table' and sawnoff.textdraw_id and sampTextdrawIsExists(sawnoff.textdraw_id)) or os.time() - wait_start > 5
                         
-                        if sawnoff and sawnoff.textdraw_id and sampTextdrawIsExists(sawnoff.textdraw_id) then
+                        if sawnoff and type(sawnoff) == 'table' and sawnoff.textdraw_id and sampTextdrawIsExists(sawnoff.textdraw_id) then
                             if sawnoff then sawnoff[5] = true end
                             repeat
                                 if sawnoff and sawnoff.textdraw_id then safeClick(sawnoff.textdraw_id) end
-                                repeat wait(1) until (sawnoff and (sawnoff.textdraw_put_id and sampTextdrawIsExists(sawnoff.textdraw_put_id) or sawnoff.textdraw_use_id and sampTextdrawIsExists(sawnoff.textdraw_use_id))) or not work
+                                repeat wait(1) until (sawnoff and type(sawnoff) == 'table' and (sawnoff.textdraw_put_id and sampTextdrawIsExists(sawnoff.textdraw_put_id) or sawnoff.textdraw_use_id and sampTextdrawIsExists(sawnoff.textdraw_use_id))) or not work
                                 wait(500)
                                 if sawnoff and sawnoff[4] == false then
                                     if sawnoff and sawnoff.textdraw_put_id then safeClick(sawnoff.textdraw_put_id) end
                                     wait(1000)
                                     if sawnoff and sawnoff.textdraw_id then safeClick(sawnoff.textdraw_id) end
-                                    repeat wait(1) until (sawnoff and (sawnoff.textdraw_put_id and sampTextdrawIsExists(sawnoff.textdraw_put_id) or sawnoff.textdraw_use_id and sampTextdrawIsExists(sawnoff.textdraw_use_id))) or not work
+                                    repeat wait(1) until (sawnoff and type(sawnoff) == 'table' and (sawnoff.textdraw_put_id and sampTextdrawIsExists(sawnoff.textdraw_put_id) or sawnoff.textdraw_use_id and sampTextdrawIsExists(sawnoff.textdraw_use_id))) or not work
                                     wait(500)
                                 end
                                 if sawnoff and sawnoff.textdraw_use_id then safeClick(sawnoff.textdraw_use_id) end
@@ -606,6 +613,7 @@ end
 
 function se.onShowTextDraw(id, data)
     if not id or not data then return end
+    if not data or type(data) ~= 'table' then return end
     
     if debug_mode and debug_mode[0] and cef and not cef[0] then
         if data.modelId and data.modelId ~= 0 then
@@ -630,33 +638,37 @@ function se.onShowTextDraw(id, data)
         if alt_model_id and alt_model_id[0] and alt_model_id[0] > 0 then FindAltItem(inventory, alt_model_id[0]) end
     end
 
-    if data.modelId and data.rotation then
+    if data.modelId and data.rotation and type(data.rotation) == 'table' then
         if data.modelId == 350 and data.rotation.x == -20 and data.rotation.y == 0 and data.rotation.z == 75 and 
            (data.backgroundColor == -13469276 or data.backgroundColor == -13149076) then
-            if sawnoff then sawnoff.textdraw_id = id end
+            if sawnoff and type(sawnoff) == 'table' then
+                sawnoff.textdraw_id = id
+            end
         end
     end
     
     if alt_model_id and alt_model_id[0] and data.modelId == alt_model_id[0] then
-        if alt then alt[1] = id end
+        if alt and type(alt) == 'table' then
+            alt[1] = id
+        end
     end
     
     if text == 'PUT' or text == 'HAѓEЏ’' then
-        if sawnoff then
+        if sawnoff and type(sawnoff) == 'table' then
             sawnoff[4] = false
             sawnoff.textdraw_put_id = id + 1
         end
-        if alt then
+        if alt and type(alt) == 'table' then
             alt[4] = false
             alt[2] = id + 1
         end
     end
     if text == 'USE' or text == '…CЊO‡’€O‹AЏ’' then
-        if sawnoff then
+        if sawnoff and type(sawnoff) == 'table' then
             sawnoff[4] = true
             sawnoff.textdraw_use_id = id + 1
         end
-        if alt then
+        if alt and type(alt) == 'table' then
             alt[4] = true
             alt[3] = id + 1
         end
@@ -962,7 +974,7 @@ function swapToAlt(scheduleReturn)
         end
     else
         openInventoryAndWait()
-        if alt and alt[1] ~= nil then
+        if alt and type(alt) == 'table' and alt[1] ~= nil then
             if not isInventoryTextdrawValid() then
                 repeat
                     sampSendChat('/invent')
@@ -1006,7 +1018,7 @@ function swapToSawnoff()
         wait(333)
         local sawnoff_slot = findItemById(inventory, targetId)
         if sawnoff_slot then
-            if sawnoff then sawnoff[5] = true end
+            if sawnoff and type(sawnoff) == 'table' then sawnoff[5] = true end
             if sawnoff_slot == 3 then
                 send_cef('clickOnButton|{"type": 2,"slot": 3, "action": 1}')
                 sampAddChatMessage('[Информация] {FFFFFF}Вернулся предмет Sawnoff [CEF].', 0x96FF00)
@@ -1023,7 +1035,7 @@ function swapToSawnoff()
         end
     else
         openInventoryAndWait()
-        if sawnoff and sawnoff.textdraw_id ~= nil and sampTextdrawIsExists(sawnoff.textdraw_id) then
+        if sawnoff and type(sawnoff) == 'table' and sawnoff.textdraw_id ~= nil and sampTextdrawIsExists(sawnoff.textdraw_id) then
             if not isInventoryTextdrawValid() then
                 repeat
                     sampSendChat('/invent')
@@ -1115,12 +1127,12 @@ function se.onShowDialog(dialogId, style, title, button1, button2, text)
 end
 
 function se.onApplyPlayerAnimation(playerId, animLib, animName, frameDelta, loop, lockX, lockY, freeze, time)
-    if work and sawnoff and sawnoff[5] then
+    if work and sawnoff and type(sawnoff) == 'table' and sawnoff[5] then
         local myPed = getPlayerPed()
         if myPed then
             local _, myId = sampGetPlayerIdByCharHandle(myPed)
             if myId and playerId == myId and animLib == 'BOMBER' then
-                if sawnoff then sawnoff[5] = false end
+                if sawnoff and type(sawnoff) == 'table' then sawnoff[5] = false end
             end
         end
     end
