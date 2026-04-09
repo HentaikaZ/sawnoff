@@ -1,5 +1,5 @@
 script_name("Sawnoff")
-script_version("1.1.6")
+script_version("2.0.0")
 script_author('SAKUTA')
 
 local se = require 'lib.samp.events'
@@ -1133,16 +1133,14 @@ function se.onShowDialog(dialogId, style, title, button1, button2, text)
 end
 
 function se.onApplyPlayerAnimation(playerId, animLib, animName, frameDelta, loop, lockX, lockY, freeze, time)
-    if work and sawnoff and sawnoff[5] then
-        local myPed = getPlayerPed()
-        if myPed then
-            local _, myId = sampGetPlayerIdByCharHandle(myPed)
-            if playerId == myId and animLib == 'BOMBER' then
-                sawnoff[5] = false
-            end
-        end
+    local sawnoff_state = ensureStateTables()
+    if not work or not sawnoff_state[5] then return end
+    local local_player_id = getLocalPlayerId()
+    if local_player_id and playerId == local_player_id and animLib == 'BOMBER' then
+        sawnoff_state[5] = false
     end
 end
+
 function onReceivePacket(id)
     if id == 31 or id == 32 or id == 33 or id == 12 or id == 35 or id == 36 or id == 37 then
         safeClearInventory()
