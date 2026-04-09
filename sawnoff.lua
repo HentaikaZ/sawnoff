@@ -1,5 +1,5 @@
 script_name("Sawnoff")
-script_version("1.0.7")
+script_version("1.1.7")
 script_author('SAKUTA')
 
 local se = require 'lib.samp.events'
@@ -7,13 +7,26 @@ local imgui = require 'mimgui'
 local inicfg = require 'inicfg'
 local encoding = require 'encoding'
 local acef = require 'arizona-events'
-local requests = require 'requests'
 local dlstatus = require('moonloader').download_status
 local cjson = require 'cjson'
 encoding.default = 'CP1251'
 u8 = encoding.UTF8
 
-local cfg = inicfg.load({
+local rawInicfgLoad = inicfg.load
+local rawInicfgSave = inicfg.save
+local rawIsSampAvailable = isSampAvailable
+local rawSampAddChatMessage = sampAddChatMessage
+local rawSampSendClickTextdraw = sampSendClickTextdraw
+local rawSampSendChat = sampSendChat
+local rawSampTextdrawIsExists = sampTextdrawIsExists
+local rawSampSendDialogResponse = sampSendDialogResponse
+local rawSampGetPlayerIdByCharHandle = sampGetPlayerIdByCharHandle
+local rawSampIsLocalPlayerSpawned = sampIsLocalPlayerSpawned
+local rawSampGetGamestate = sampGetGamestate
+
+local config_name = 'sawnoff_auto_collector'
+local config_path = config_name .. '.ini'
+local default_config = {
     settings = {
         auto_start = false,
         random_delay = false,
@@ -28,15 +41,215 @@ local cfg = inicfg.load({
         auto_cycle_cd = false,
         auto_update = true
     }
-}, 'sawnoff_auto_collector')
+}
 
-if cfg.settings.auto_swap and cfg.settings.auto_cycle_cd then
-    cfg.settings.auto_cycle_cd = false
-    inicfg.save(cfg, 'sawnoff_auto_collector.ini')
+local function cloneTable(value)
+    if type(value) ~= 'table' then
+        return value
+    end
+    local cloned = {}
+    for key, nested in pairs(value) do
+        cloned[key] = cloneTable(nested)
+    end
+    return cloned
 end
 
-if not doesFileExist('sawnoff_auto_collector.ini') then
-    inicfg.save(cfg, 'sawnoff_auto_collector.ini')
+local function normalizeBoolean(value, fallback)
+    if value == nil then
+        return fallback == true
+    end
+    return value == true
+end
+
+local function normalizeInteger(value, fallback, min_value, max_value)
+    local number = tonumber(value)
+    if number == nil then
+        number = fallback
+    end
+    number = math.floor(tonumber(number) or 0)
+    if min_value ~= nil and number < min_value then
+        number = min_value
+    end
+    if max_value ~= nil and number > max_value then
+        number = max_value
+    end
+    return number
+end
+
+local function resetSawnoffState()
+    return {
+        textdraw_id = nil,
+        textdraw_put_id = nil,
+        textdraw_use_id = nil,
+        [4] = false,
+        [5] = false
+    }
+end
+
+local function resetAltState()
+    return {nil, nil, nil, false, false}
+end
+
+local function isSampReady()
+    if type(rawIsSampAvailable) ~= 'function' then
+        return false
+    end
+    local ok, result = pcall(rawIsSampAvailable)
+    return ok and result == true
+end
+
+local cfg = cloneTable(default_config)
+
+local function normalizeConfig()
+    if type(cfg) ~= 'table' then
+        cfg = cloneTable(default_config)
+    end
+    if type(cfg.settings) ~= 'table' then
+        cfg.settings = cloneTable(default_config.settings)
+    end
+
+    local settings = cfg.settings
+    settings.auto_start = normalizeBoolean(settings.auto_start, default_config.settings.auto_start)
+    settings.random_delay = normalizeBoolean(settings.random_delay, default_config.settings.random_delay)
+    settings.random_delay_time_min = normalizeInteger(settings.random_delay_time_min, default_config.settings.random_delay_time_min, 0, 99)
+    settings.random_delay_time_max = normalizeInteger(settings.random_delay_time_max, default_config.settings.random_delay_time_max, 0, 99)
+    if settings.random_delay_time_min > settings.random_delay_time_max then
+        settings.random_delay_time_min = settings.random_delay_time_max
+    end
+    settings.open_inventory = normalizeBoolean(settings.open_inventory, default_config.settings.open_inventory)
+    settings.connected = normalizeBoolean(settings.connected, default_config.settings.connected)
+    settings.auto_swap = normalizeBoolean(settings.auto_swap, default_config.settings.auto_swap)
+    settings.alt_model_id = normalizeInteger(settings.alt_model_id, default_config.settings.alt_model_id, 1, 999999)
+    settings.cef = normalizeBoolean(settings.cef, default_config.settings.cef)
+    settings.dbg = normalizeBoolean(settings.dbg, default_config.settings.dbg)
+    settings.auto_cycle_cd = normalizeBoolean(settings.auto_cycle_cd, default_config.settings.auto_cycle_cd)
+    settings.auto_update = normalizeBoolean(settings.auto_update, default_config.settings.auto_update)
+
+    if settings.auto_swap and settings.auto_cycle_cd then
+        settings.auto_cycle_cd = false
+    end
+end
+
+do
+    local ok, loaded = pcall(rawInicfgLoad, cloneTable(default_config), config_name)
+    if ok and type(loaded) == 'table' then
+        cfg = loaded
+    end
+end
+normalizeConfig()
+
+local function safeSaveConfig()
+    normalizeConfig()
+    local ok, result = pcall(rawInicfgSave, cfg, config_path)
+    if not ok then
+        print('[Sawnoff] Failed to save config: ' .. tostring(result))
+        return false
+    end
+    return result
+end
+
+inicfg.save = function(config, path)
+    local config_to_save = type(config) == 'table' and config or cfg
+    local save_path = path or config_path
+    if config_to_save == cfg then
+        normalizeConfig()
+    end
+    local ok, result = pcall(rawInicfgSave, config_to_save, save_path)
+    if not ok then
+        print('[Sawnoff] Failed to save config: ' .. tostring(result))
+        return false
+    end
+    return result
+end
+
+function sampAddChatMessage(text, color)
+    if type(rawSampAddChatMessage) ~= 'function' or not isSampReady() then
+        return false
+    end
+    local ok, result = pcall(rawSampAddChatMessage, tostring(text or ''), color or 0xFFFFFF)
+    return ok and result or false
+end
+
+function sampSendClickTextdraw(id)
+    if type(rawSampSendClickTextdraw) ~= 'function' or not isSampReady() then
+        return false
+    end
+    local numeric_id = tonumber(id)
+    if not numeric_id then
+        return false
+    end
+    local ok, result = pcall(rawSampSendClickTextdraw, numeric_id)
+    return ok and result or false
+end
+
+function sampSendChat(text)
+    if type(rawSampSendChat) ~= 'function' or not isSampReady() then
+        return false
+    end
+    local chat_text = tostring(text or '')
+    if chat_text == '' then
+        return false
+    end
+    local ok, result = pcall(rawSampSendChat, chat_text)
+    return ok and result or false
+end
+
+function sampTextdrawIsExists(id)
+    if type(rawSampTextdrawIsExists) ~= 'function' or not isSampReady() then
+        return false
+    end
+    local numeric_id = tonumber(id)
+    if not numeric_id then
+        return false
+    end
+    local ok, result = pcall(rawSampTextdrawIsExists, numeric_id)
+    return ok and result == true
+end
+
+function sampSendDialogResponse(dialogId, button, listItem, inputText)
+    if type(rawSampSendDialogResponse) ~= 'function' or not isSampReady() then
+        return false
+    end
+    local numeric_dialog_id = tonumber(dialogId)
+    if not numeric_dialog_id then
+        return false
+    end
+    local ok, result = pcall(rawSampSendDialogResponse, numeric_dialog_id, button or 0, listItem, inputText)
+    return ok and result or false
+end
+
+function sampGetPlayerIdByCharHandle(handle)
+    if type(rawSampGetPlayerIdByCharHandle) ~= 'function' or not handle then
+        return false, nil
+    end
+    local ok, exists, player_id = pcall(rawSampGetPlayerIdByCharHandle, handle)
+    if not ok then
+        return false, nil
+    end
+    return exists == true, tonumber(player_id)
+end
+
+function sampIsLocalPlayerSpawned()
+    if type(rawSampIsLocalPlayerSpawned) ~= 'function' then
+        return false
+    end
+    local ok, result = pcall(rawSampIsLocalPlayerSpawned)
+    return ok and result == true
+end
+
+function sampGetGamestate()
+    if type(rawSampGetGamestate) ~= 'function' then
+        return 0
+    end
+    local ok, result = pcall(rawSampGetGamestate)
+    if not ok then
+        return 0
+    end
+    return tonumber(result) or 0
+end
+
+if not doesFileExist(config_path) then
+    safeSaveConfig()
 end
 
 local inventory = {}
@@ -48,15 +261,8 @@ local inventory_fix = false
 local inventory_id = nil
 local first_start = true
 local delay_time = nil
-local sawnoff = {
-    textdraw_id = nil,
-    textdraw_put_id = nil,
-    textdraw_use_id = nil,
-    [4] = false,
-    [5] = false
-}
+local sawnoff = resetSawnoffState()
 local auto_start = imgui.new.bool(cfg.settings.auto_start)
-local connected = cfg.settings.connected
 local random_delay = imgui.new.bool(cfg.settings.random_delay)
 local random_delay_time_min = imgui.new.int(cfg.settings.random_delay_time_min)
 local random_delay_time_max = imgui.new.int(cfg.settings.random_delay_time_max)
@@ -64,7 +270,7 @@ local open_inventory = imgui.new.bool(cfg.settings.open_inventory)
 local timer = imgui.new.bool(false)
 local timer_time = imgui.new.int(0)
 local cef = imgui.new.bool(cfg.settings.cef)
-local alt = {_, _, _, false, false}
+local alt = resetAltState()
 local auto_swap = imgui.new.bool(cfg.settings.auto_swap)
 local alt_model_id = imgui.new.int(cfg.settings.alt_model_id)
 local swap_thread_running = false
@@ -78,6 +284,129 @@ local update_url = nil
 local update_available = false
 local update_notified = false
 local update_check_running = false
+
+local function getBoolValue(ref, fallback)
+    if type(ref) == 'table' and ref[0] ~= nil then
+        return ref[0] == true
+    end
+    return fallback == true
+end
+
+local function setBoolValue(ref, value)
+    if type(ref) == 'table' then
+        ref[0] = value == true
+    end
+end
+
+local function getIntValue(ref, fallback, min_value, max_value)
+    local value = fallback
+    if type(ref) == 'table' and ref[0] ~= nil then
+        value = ref[0]
+    end
+    return normalizeInteger(value, fallback, min_value, max_value)
+end
+
+local function setIntValue(ref, value)
+    if type(ref) == 'table' then
+        ref[0] = value
+    end
+end
+
+local function ensureInventoryTable()
+    if type(inventory) ~= 'table' then
+        inventory = {}
+    end
+    return inventory
+end
+
+local function ensureStateTables()
+    if type(sawnoff) ~= 'table' then
+        sawnoff = resetSawnoffState()
+    end
+    if type(alt) ~= 'table' then
+        alt = resetAltState()
+    end
+    return sawnoff, alt
+end
+
+local function normalizeUiState()
+    normalizeConfig()
+    setBoolValue(auto_start, cfg.settings.auto_start)
+    setBoolValue(random_delay, cfg.settings.random_delay)
+    setIntValue(random_delay_time_min, cfg.settings.random_delay_time_min)
+    setIntValue(random_delay_time_max, cfg.settings.random_delay_time_max)
+    setBoolValue(open_inventory, cfg.settings.open_inventory)
+    setBoolValue(cef, cfg.settings.cef)
+    setBoolValue(auto_swap, cfg.settings.auto_swap)
+    setIntValue(alt_model_id, cfg.settings.alt_model_id)
+    setBoolValue(debug_mode, cfg.settings.dbg)
+    setBoolValue(auto_cycle_cd, cfg.settings.auto_cycle_cd)
+    setBoolValue(auto_update, cfg.settings.auto_update)
+end
+
+local function normalizeRandomDelayRange()
+    local min_value = getIntValue(random_delay_time_min, cfg.settings.random_delay_time_min, 0, 99)
+    local max_value = getIntValue(random_delay_time_max, cfg.settings.random_delay_time_max, 0, 99)
+    if min_value > max_value then
+        min_value = max_value
+    end
+    setIntValue(random_delay_time_min, min_value)
+    setIntValue(random_delay_time_max, max_value)
+    cfg.settings.random_delay_time_min = min_value
+    cfg.settings.random_delay_time_max = max_value
+    return min_value, max_value
+end
+
+local function getRandomDelayMs()
+    if not getBoolValue(random_delay, cfg.settings.random_delay) then
+        return 0
+    end
+    local min_value, max_value = normalizeRandomDelayRange()
+    if min_value > max_value then
+        min_value = max_value
+    end
+    return math.random(min_value * 60000, max_value * 60000)
+end
+
+local function getCooldownMinutes(value, fallback)
+    return normalizeInteger(value, fallback or 60, 0, 9999)
+end
+
+local function getTimerMinutes()
+    local minutes = getIntValue(timer_time, 0, 0, 99)
+    setIntValue(timer_time, minutes)
+    setBoolValue(timer, minutes > 0)
+    return minutes
+end
+
+local function waitInSteps(total_ms, step_ms, condition)
+    local remaining = normalizeInteger(total_ms, 0, 0)
+    local step = normalizeInteger(step_ms, 1000, 1)
+    while remaining > 0 do
+        local current_step = math.min(step, remaining)
+        wait(current_step)
+        remaining = remaining - current_step
+        if condition and not condition() then
+            return false
+        end
+    end
+    return true
+end
+
+local function getLocalPlayerId()
+    if not playerPed then
+        return nil
+    end
+    local ok, exists = pcall(doesCharExist, playerPed)
+    if not ok or exists ~= true then
+        return nil
+    end
+    local found, player_id = sampGetPlayerIdByCharHandle(playerPed)
+    if found ~= true then
+        return nil
+    end
+    return tonumber(player_id)
+end
 
 local function checkForUpdate(manual)
     if update_check_running then return end
@@ -107,7 +436,7 @@ local function checkForUpdate(manual)
                             if latest ~= thisScript().version then
                                 update_available = true
                                 if manual then
-                                    sampAddChatMessage(string.format('[Автосбор] {FFFFFF}Доступно обновление {FF6347}%s{FFFFFF}. Скачиваю обновление...', latest), 0x96FF00)
+                                    sampAddChatMessage(string.format('[Информация] {FFFFFF}Обнаружено обновление {FF6347}%s{FFFFFF}. Начинаю обновление...', latest), 0x96FF00)
                                     lua_thread.create(function()
                                         wait(250)
                                         downloadUrlToFile(update_link, thisScript().path,
@@ -116,7 +445,7 @@ local function checkForUpdate(manual)
                                                     print(string.format('Загружено %d из %d.', p13, p23))
                                                 elseif status1 == dlstatus.STATUS_ENDDOWNLOADDATA then
                                                     print('Загрузка обновления завершена.')
-                                                    sampAddChatMessage('[Автосбор] {FFFFFF}Обновление установлено!', 0x96FF00)
+                                                    sampAddChatMessage('[Информация] {FFFFFF}Обновление завершено!', 0x96FF00)
                                                     lua_thread.create(function() wait(500) thisScript():reload() end)
                                                 end
                                             end
@@ -124,7 +453,7 @@ local function checkForUpdate(manual)
                                     end)
                                 else
                                     if auto_update and auto_update[0] then
-                                        sampAddChatMessage(string.format('[Автосбор] {FFFFFF}Доступно обновление {FF6347}%s{FFFFFF}. Обновляюсь...', latest), 0x96FF00)
+                                        sampAddChatMessage(string.format('[Информация] {FFFFFF}Обнаружено обновление {FF6347}%s{FFFFFF}. Автообновление...', latest), 0x96FF00)
                                         lua_thread.create(function()
                                             wait(250)
                                             downloadUrlToFile(update_link, thisScript().path,
@@ -133,7 +462,7 @@ local function checkForUpdate(manual)
                                                         print(string.format('Загружено %d из %d.', p13, p23))
                                                     elseif status1 == dlstatus.STATUS_ENDDOWNLOADDATA then
                                                         print('Загрузка обновления завершена.')
-                                                        sampAddChatMessage('[Автосбор] {FFFFFF}Обновление установлено!', 0x96FF00)
+                                                        sampAddChatMessage('[Информация] {FFFFFF}Обновление завершено!', 0x96FF00)
                                                         lua_thread.create(function() wait(500) thisScript():reload() end)
                                                     end
                                                 end
@@ -141,7 +470,7 @@ local function checkForUpdate(manual)
                                         end)
                                     else
                                         if not update_notified then
-                                            sampAddChatMessage('[Автосбор] {FFFFFF}Доступно обновление. Нажмите "Проверить обновление" для установки.', 0x96FF00)
+                                            sampAddChatMessage('[Информация] {FFFFFF}Доступно обновление. Нажмите кнопку "Проверка обновления" для обновления.', 0x96FF00)
                                             update_notified = true
                                         end
                                     end
@@ -149,20 +478,20 @@ local function checkForUpdate(manual)
                             else
                                 update_available = false
                                 if manual then
-                                    sampAddChatMessage('[Автосбор] {FFFFFF}У вас последняя версия скрипта.', 0x96FF00)
+                                    sampAddChatMessage('[Информация] {FFFFFF}У вас актуальная версия скрипта.', 0x96FF00)
                                 end
                             end
                         else
-                            sampAddChatMessage('[Автосбор] {FF6347}Ошибка проверки обновлений. Попробуйте позже.', 0x96FF00)
+                            sampAddChatMessage('[Информация] {FF6347}Ошибка проверки обновления. Свяжитесь с разработчиком.', 0x96FF00)
                         end
                     else
-                        sampAddChatMessage('[Автосбор] {FF6347}Не удалось создать файл обновления. Попробуйте позже.', 0x96FF00)
+                        sampAddChatMessage('[Информация] {FF6347}Не удалось прочитать файл обновления. Свяжитесь с разработчиком.', 0x96FF00)
                     end
                 else
-                    sampAddChatMessage('[Автосбор] {FF6347}Не удалось скачать файл обновления. Попробуйте позже.', 0x96FF00)
+                    sampAddChatMessage('[Информация] {FF6347}Не удалось загрузить файл обновления. Свяжитесь с разработчиком.', 0x96FF00)
                 end
             elseif status == dlstatus.STATUSEX_ABORTED then
-                sampAddChatMessage('[Автосбор] {FF6347}Загрузка обновления отменена.', 0x96FF00)
+                sampAddChatMessage('[Информация] {FF6347}Загрузка обновления прервана.', 0x96FF00)
             end
             update_check_running = false
         end)
@@ -177,25 +506,26 @@ local function safeClearInventory()
 end
 
 local function safeSetInventoryItem(slot, data)
-    if not inventory or type(inventory) ~= 'table' then
-        inventory = {}
+    local normalized_slot = tonumber(slot)
+    if not normalized_slot or type(data) ~= 'table' then
+        return
     end
-    if slot and data then
-        inventory[slot] = data
-    end
+    ensureInventoryTable()
+    inventory[normalized_slot] = data
 end
 
 local function safeRemoveInventoryItem(slot)
-    if not inventory or type(inventory) ~= 'table' then
+    local normalized_slot = tonumber(slot)
+    if not normalized_slot or type(inventory) ~= 'table' then
         return
     end
-    if slot then
-        inventory[slot] = nil
-    end
+    inventory[normalized_slot] = nil
 end
 
 local function openInventoryAndWait()
-    if not sampIsLocalPlayerSpawned() then return end
+    if not sampIsLocalPlayerSpawned() then
+        return false
+    end
     inventory_fix = true
     sampSendClickTextdraw(65535)
     wait(1000)
@@ -204,8 +534,9 @@ local function openInventoryAndWait()
     repeat 
         wait(100) 
         wait_count = wait_count + 1
-    until (isInventoryTextdrawValid() or wait_count > 50)
+    until (not work and wait_count > 1) or isInventoryTextdrawValid() or wait_count > 50
     wait(500)
+    return isInventoryTextdrawValid()
 end
 
 local function isPayDayBlocked()
@@ -231,24 +562,22 @@ end
 
 local function startCycleWithCD()
     if cycle_thread_running then return end
-    if not auto_cycle_cd or not auto_cycle_cd[0] then return end
+    if not getBoolValue(auto_cycle_cd, cfg.settings.auto_cycle_cd) then return end
     cycle_thread_running = true
     
     lua_thread.create(function()
-        while work and auto_cycle_cd and auto_cycle_cd[0] do
-            -- локальные копии с проверкой типа
-            local sawnoff_local = (type(sawnoff) == 'table') and sawnoff or nil
-            local alt_local = (type(alt) == 'table') and alt or nil
+        while work and getBoolValue(auto_cycle_cd, cfg.settings.auto_cycle_cd) do
+            local sawnoff_local, alt_local = ensureStateTables()
+            local alt_model_value = getIntValue(alt_model_id, cfg.settings.alt_model_id, 1, 999999)
+            local keep_inventory_open = getBoolValue(open_inventory, cfg.settings.open_inventory)
             
-            if not (sawnoff_local and sawnoff_local[5]) then
-                if isPayDayBlocked() then
-                    local wait_time = getPayDayUnlockTime()
-                    sampAddChatMessage(string.format('[Информация] {FFFFFF}Ожидание окончания {FF6347}PayDay{FFFFFF} перед сменой на обрез: {FF6347}%d сек.', wait_time), 0x96FF00)
-                    wait(wait_time * 1000)
-                end
+            if not sawnoff_local[5] and isPayDayBlocked() then
+                local wait_time = getPayDayUnlockTime()
+                sampAddChatMessage(string.format('[Информация] {FFFFFF}Ожидание окончания {FF6347}PayDay{FFFFFF} перед сменой на обрез: {FF6347}%d сек.', wait_time), 0x96FF00)
+                waitInSteps(wait_time * 1000, 1000, function() return work and getBoolValue(auto_cycle_cd, cfg.settings.auto_cycle_cd) end)
             end
 
-            if cef and cef[0] then
+            if getBoolValue(cef, cfg.settings.cef) then
                 openInventoryAndWait()
                 wait(333)
                 
@@ -263,16 +592,16 @@ local function startCycleWithCD()
                     end
                     if sawnoff_slot == 3 then
                         send_cef('clickOnButton|{"type": 2,"slot": 3, "action": 1}')
-                        if sawnoff_local then sawnoff_local[5] = true end
+                        sawnoff_local[5] = true
                         delay_time = nil
                         local wait_start = os.time()
                         repeat wait(100) until delay_time ~= nil or not work or os.time() - wait_start > 10
                         if delay_time == nil then delay_time = 60 end
-                    else
+                    elseif type(sawnoff_slot) == 'number' then
                         send_cef('inventory.moveItemForce|{"slot": ' .. tostring(sawnoff_slot) .. ', "type": 1, "amount": 1}')
                         wait(333)
                         send_cef('clickOnButton|{"type": 2,"slot": 3, "action": 1}')
-                        if sawnoff_local then sawnoff_local[5] = true end
+                        sawnoff_local[5] = true
                         delay_time = nil
                         local wait_start = os.time()
                         repeat wait(100) until delay_time ~= nil or not work or os.time() - wait_start > 10
@@ -282,26 +611,25 @@ local function startCycleWithCD()
                 
                 wait(500)
                 
-                local alt_slot = FindAltItem(inventory, alt_model_id and alt_model_id[0])
+                local alt_slot = alt_model_value > 0 and FindAltItem(inventory, alt_model_value) or nil
                 if alt_slot then
                     if alt_slot ~= 3 then
-                        send_cef('inventory.moveItemForce|{"slot": ' .. alt_slot .. ', "type": 1, "amount": 1}')
+                        send_cef('inventory.moveItemForce|{"slot": ' .. tostring(alt_slot) .. ', "type": 1, "amount": 1}')
                         wait(333)
                     end
                     sampAddChatMessage('[Информация] {FFFFFF}Альт-предмет одет. [CEF]', 0x96FF00)
-                    sampSendClickTextdraw(65535)
                 else
-                    sampAddChatMessage('[Автосбор] {FF6347}Альт-предмет не найден. [CEF]', 0x96FF00)
+                    sampAddChatMessage('[Информация] {FF6347}Альт-предмет не найден. [CEF]', 0x96FF00)
                 end
                 
-                if open_inventory and not open_inventory[0] then
+                if not keep_inventory_open then
                     sampSendClickTextdraw(65535)
                 end
             else
                 openInventoryAndWait()
                 wait(666)
                 
-                if not (sawnoff_local and sawnoff_local.textdraw_id) then
+                if not sawnoff_local.textdraw_id then
                     sampAddChatMessage('[Информация] {FF6347}Не удалось найти иконку обреза (нет данных). Попытка позже.', 0x96FF00)
                     wait(5000)
                     goto continue_loop
@@ -311,18 +639,18 @@ local function startCycleWithCD()
                 repeat
                     wait(100)
                     if not work then break end
-                until (sawnoff_local and sawnoff_local.textdraw_id and sampTextdrawIsExists(sawnoff_local.textdraw_id)) or os.time() - wait_start > 5
+                until (sawnoff_local.textdraw_id and sampTextdrawIsExists(sawnoff_local.textdraw_id)) or os.time() - wait_start > 5
                 
-                if sawnoff_local and sawnoff_local.textdraw_id and sampTextdrawIsExists(sawnoff_local.textdraw_id) then
+                if sawnoff_local.textdraw_id and sampTextdrawIsExists(sawnoff_local.textdraw_id) then
                     safeClick(sawnoff_local.textdraw_id)
                     
                     wait_start = os.time()
                     repeat
                         wait(100)
                         if not work then break end
-                    until (sawnoff_local and (sawnoff_local.textdraw_put_id and sampTextdrawIsExists(sawnoff_local.textdraw_put_id) or sawnoff_local.textdraw_use_id and sampTextdrawIsExists(sawnoff_local.textdraw_use_id))) or os.time() - wait_start > 3
+                    until ((sawnoff_local.textdraw_put_id and sampTextdrawIsExists(sawnoff_local.textdraw_put_id)) or (sawnoff_local.textdraw_use_id and sampTextdrawIsExists(sawnoff_local.textdraw_use_id))) or os.time() - wait_start > 3
                     
-                    if sawnoff_local and sawnoff_local.textdraw_put_id and sampTextdrawIsExists(sawnoff_local.textdraw_put_id) then
+                    if sawnoff_local.textdraw_put_id and sampTextdrawIsExists(sawnoff_local.textdraw_put_id) then
                         safeClick(sawnoff_local.textdraw_put_id)
                         wait(1000)
                         safeClick(sawnoff_local.textdraw_id)
@@ -330,71 +658,54 @@ local function startCycleWithCD()
                         repeat
                             wait(100)
                             if not work then break end
-                        until (sawnoff_local and sawnoff_local.textdraw_use_id and sampTextdrawIsExists(sawnoff_local.textdraw_use_id)) or os.time() - wait_start > 3
+                        until (sawnoff_local.textdraw_use_id and sampTextdrawIsExists(sawnoff_local.textdraw_use_id)) or os.time() - wait_start > 3
                     end
                     
-                    if sawnoff_local and sawnoff_local.textdraw_use_id and sampTextdrawIsExists(sawnoff_local.textdraw_use_id) then
+                    if sawnoff_local.textdraw_use_id and sampTextdrawIsExists(sawnoff_local.textdraw_use_id) then
                         safeClick(sawnoff_local.textdraw_use_id)
                         wait(500)
-                        if sawnoff_local then sawnoff_local[5] = true end
+                        sawnoff_local[5] = true
                     else
-                        sampAddChatMessage('[Автосбор] {FF6347}Не удалось найти кнопку использования.', 0x96FF00)
+                        sampAddChatMessage('[Информация] {FF6347}Не удалось использовать обрез.', 0x96FF00)
                     end
 
                     wait(666)
                     
-                    if alt_local and alt_local[1] and sampTextdrawIsExists(alt_local[1]) then
+                    if alt_local[1] and sampTextdrawIsExists(alt_local[1]) then
                         safeClick(alt_local[1])
                         wait(500)
-                        if alt_local and alt_local[2] and sampTextdrawIsExists(alt_local[2]) then
+                        if alt_local[2] and sampTextdrawIsExists(alt_local[2]) then
                             safeClick(alt_local[2])
                             wait(500)
                             sampAddChatMessage('[Информация] {FFFFFF}Альт-предмет одет.', 0x96FF00)
-                            if sawnoff_local then sawnoff_local[5] = false end
+                            sawnoff_local[5] = false
                         else
-                            sampAddChatMessage('[Автосбор] {FF6347}Текстдрава PUT для альта не найдена.', 0x96FF00)
+                            sampAddChatMessage('[Информация] {FF6347}Кнопка PUT для альта не найдена.', 0x96FF00)
                         end
                     else
-                        sampAddChatMessage('[Автосбор] {FF6347}Альт-предмет не найден.', 0x96FF00)
+                        sampAddChatMessage('[Информация] {FF6347}Альт-предмет не найден.', 0x96FF00)
                     end
                     
-                    if open_inventory and not open_inventory[0] then
+                    if not keep_inventory_open then
                         sampSendClickTextdraw(65535)
                     end
                 else
-                    sampAddChatMessage('[Автосбор] {FF6347}Не удалось найти текстдрав обреза. Повторю позже.', 0x96FF00)
+                    sampAddChatMessage('[Информация] {FF6347}Не удалось найти иконку обреза. Попытка позже.', 0x96FF00)
                 end
             end
             
             ::continue_loop::
             if delay_time then
-                local wait_minutes = tonumber(delay_time) or 60
+                local wait_minutes = getCooldownMinutes(delay_time, 60)
                 sampAddChatMessage(string.format('[Информация] {FFFFFF}Ожидание КД: {FFD700}%d {FFFFFF}минут.', wait_minutes), 0x96FF00)
-                
-                local total_wait = wait_minutes * 60000
-                local elapsed = 0
-                local check_interval = 5000
-                
-                while elapsed < total_wait and work and auto_cycle_cd and auto_cycle_cd[0] do
-                    wait(math.min(check_interval, total_wait - elapsed))
-                    elapsed = elapsed + check_interval
-                end
-                
+                waitInSteps(wait_minutes * 60000, 5000, function() return work and getBoolValue(auto_cycle_cd, cfg.settings.auto_cycle_cd) end)
                 delay_time = nil
             else
                 sampAddChatMessage('[Информация] {FFFFFF}КД не определен, ожидание 60 минут.', 0x96FF00)
-                
-                local total_wait = 60 * 60000
-                local elapsed = 0
-                local check_interval = 5000
-                
-                while elapsed < total_wait and work and auto_cycle_cd and auto_cycle_cd[0] do
-                    wait(math.min(check_interval, total_wait - elapsed))
-                    elapsed = elapsed + check_interval
-                end
+                waitInSteps(60 * 60000, 5000, function() return work and getBoolValue(auto_cycle_cd, cfg.settings.auto_cycle_cd) end)
             end
             
-            if not work or not auto_cycle_cd or not auto_cycle_cd[0] then
+            if not work or not getBoolValue(auto_cycle_cd, cfg.settings.auto_cycle_cd) then
                 break
             end
         end
@@ -404,16 +715,16 @@ end
 
 function se.onServerMessage(color, text)
     if work then
-        if text and type(text) == 'string' and text:find('Вы использовали обрез и получили срок на (.+) минут!') then
-            local minutes = text:match('Вы использовали обрез и получили срок на (.+) минут!')
+        if text and type(text) == 'string' and text:find('Для использования этого аксессуара должно пройти ещё (.+) минут!') then
+            local minutes = text:match('Для использования этого аксессуара должно пройти ещё (.+) минут!')
             if minutes then
                 delay_time = minutes
                 if sawnoff and type(sawnoff) == 'table' then sawnoff[5] = false end
                 first_start = true
             end
         end
-        if text and type(text) == 'string' and text:find('Полицейский заметил вас за использованием запрещённого предмета!') then
-            sampAddChatMessage('[Автосбор] {FFFFFF}Полицейский {FF6347}заметил! {FFFFFF}Работа {FF6347}остановлена.', 0x96FF00)
+        if text and type(text) == 'string' and text:find('Воспользуйте мастерской по ремонту одежды для восстановления состояния аксессуара!') then
+            sampAddChatMessage('[Информация] {FFFFFF}Аксессуар "Обрез" {FF6347}Сломался! {FFFFFF}Скрипт {FF6347}выключен.', 0x96FF00)
             work = false
         end
     end
@@ -422,68 +733,75 @@ end
 function main()
     if not isSampLoaded() or not isSampfuncsLoaded() then return end
     while not isSampAvailable() do wait(100) end
+    normalizeUiState()
     
-    if auto_update and auto_update[0] then
+    if getBoolValue(auto_update, cfg.settings.auto_update) then
         checkForUpdate(false)
     end
     
     sampRegisterChatCommand('sawnoff', function() if main_window then main_window[0] = not main_window[0] end end)
     
-    if debug_mode and debug_mode[0] then
-        if cef and cef[0] then
+    if getBoolValue(debug_mode, cfg.settings.dbg) then
+        if getBoolValue(cef, cfg.settings.cef) then
             sampAddChatMessage('[Отладка] {FFFFFF}Режим CEF: {42B02C}ВКЛЮЧЕН', 0x96FF00)
             sampAddChatMessage('[Отладка] {FFFFFF}Будут показываться ID предметов из CEF пакетов', 0x96FF00)
         else
-            sampAddChatMessage('[Отладка] {FFFFFF}Режим CEF: {FF6347}Отключен', 0x96FF00)
-            sampAddChatMessage('[Отладка] {FFFFFF}Поиск альт предмета по MODEL ID текстдрав', 0x96FF00)
-            sampAddChatMessage('[Отладка] {FFFFFF}Откройте инвентарь (/invent) после запуска скрипта', 0x96FF00)
+            sampAddChatMessage('[Отладка] {FFFFFF}Режим CEF: {FF6347}ВЫКЛЮЧЕН', 0x96FF00)
+            sampAddChatMessage('[Отладка] {FFFFFF}Будут показываться MODEL ID из текстдравов', 0x96FF00)
+            sampAddChatMessage('[Отладка] {FFFFFF}Откройте инвентарь (/invent) чтобы увидеть модели', 0x96FF00)
         end
     end
     
     while true do
         wait(0)
         if work then
+            ensureStateTables()
+            normalizeConfig()
             if not sampIsLocalPlayerSpawned() and sampGetGamestate() == 3 then
                 work = false
             else
-                if auto_cycle_cd and auto_cycle_cd[0] then
+                if getBoolValue(auto_cycle_cd, cfg.settings.auto_cycle_cd) then
                     wait(1000)
                 else
-                    if first_start and timer and timer[0] then
-                        if timer_time and timer_time[0] and timer_time[0] > 0 then
-                            wait(timer_time[0] * 60000)
-                            timer_time[0] = 0
+                    if first_start and getBoolValue(timer, false) then
+                        local timer_minutes = getTimerMinutes()
+                        if timer_minutes > 0 then
+                            waitInSteps(timer_minutes * 60000, 1000, function() return work end)
+                            setIntValue(timer_time, 0)
+                            setBoolValue(timer, false)
                         end
                     end    
+                    local alt_model_value = getIntValue(alt_model_id, cfg.settings.alt_model_id, 1, 999999)
+                    local keep_inventory_open = getBoolValue(open_inventory, cfg.settings.open_inventory)
                     if first_start then
                         if targetId and targetId > 0 then findItemById(inventory, targetId) end
-                        if alt_model_id and alt_model_id[0] and alt_model_id[0] > 0 then FindAltItem(inventory, alt_model_id[0]) end
+                        if alt_model_value > 0 then FindAltItem(inventory, alt_model_value) end
                         sampSendClickTextdraw(65535)
                         sampAddChatMessage('[Информация] {FFFFFF}Сейчас откроется инвентарь.', 0x96FF00)
-                    elseif not first_start and open_inventory and not open_inventory[0] then
+                    elseif not first_start and not keep_inventory_open then
                         if targetId and targetId > 0 then findItemById(inventory, targetId) end
-                        if alt_model_id and alt_model_id[0] and alt_model_id[0] > 0 then FindAltItem(inventory, alt_model_id[0]) end
+                        if alt_model_value > 0 then FindAltItem(inventory, alt_model_value) end
                         sampSendClickTextdraw(65535)
-                        sampAddChatMessage('[Автосбор] {FFFFFF}Начинаю поиск инвентаря.', 0x96FF00)
+                        sampAddChatMessage('[Информация] {FFFFFF}Сейчас откроется инвентарь.', 0x96FF00)
                     end
                     wait(666)
                     inventory_fix = true
                     wait(666)
                     if first_start then
                         if targetId and targetId > 0 then findItemById(inventory, targetId) end
-                        if alt_model_id and alt_model_id[0] and alt_model_id[0] > 0 then FindAltItem(inventory, alt_model_id[0]) end
+                        if alt_model_value > 0 then FindAltItem(inventory, alt_model_value) end
                         sampSendChat('/invent')
-                    elseif not first_start and open_inventory and not open_inventory[0] then
+                    elseif not first_start and not keep_inventory_open then
                         if targetId and targetId > 0 then findItemById(inventory, targetId) end
-                        if alt_model_id and alt_model_id[0] and alt_model_id[0] > 0 then FindAltItem(inventory, alt_model_id[0]) end
+                        if alt_model_value > 0 then FindAltItem(inventory, alt_model_value) end
                         sampSendChat('/invent')
-                    elseif not first_start and open_inventory and open_inventory[0] and not isInventoryTextdrawValid() then
+                    elseif not first_start and keep_inventory_open and not isInventoryTextdrawValid() then
                         if targetId and targetId > 0 then findItemById(inventory, targetId) end
-                        if alt_model_id and alt_model_id[0] and alt_model_id[0] > 0 then FindAltItem(inventory, alt_model_id[0]) end
+                        if alt_model_value > 0 then FindAltItem(inventory, alt_model_value) end
                         sampSendChat('/invent')
                     end
                 
-                    if cef and cef[0] then
+                    if getBoolValue(cef, cfg.settings.cef) then
                         wait(666)
                         local sawnoff_slot = findItemById(inventory, targetId)
                         if sawnoff_slot ~= nil then
@@ -539,28 +857,21 @@ function main()
                                 wait(500)
                             until sawnoff and sawnoff[5] == false or not work
                         else
-                            sampAddChatMessage('[Автосбор] {FF6347}Не удалось найти текстдрав обреза. Повторю позже.', 0x96FF00)
+                            sampAddChatMessage('[Информация] {FF6347}Не удалось найти текстдрав обреза. Попробую позже.', 0x96FF00)
                         end
                         wait(500)
                     end
 
-                    if open_inventory and not open_inventory[0] then
+                    if not keep_inventory_open then
                         sampSendClickTextdraw(65535)
                     end
                     if delay_time ~= nil then
-                        if random_delay and not random_delay[0] then
-                            wait(tonumber(delay_time) * 60000 + 60000)
-                        else
-                            wait(tonumber(delay_time) * 60000 + 60000 + math.random(random_delay_time_min[0] * 60000, random_delay_time_max[0] * 60000))
-                        end
+                        local cooldown_wait = getCooldownMinutes(delay_time, 60) * 60000 + 60000 + getRandomDelayMs()
+                        waitInSteps(cooldown_wait, 5000, function() return work end)
                         delay_time = nil
                         first_start = true
                     else
-                        if random_delay and not random_delay[0] then
-                            wait(61 * 60000)
-                        else
-                            wait(61 * 60000 + math.random(random_delay_time_min[0] * 60000, random_delay_time_max[0] * 60000))
-                        end
+                        waitInSteps(61 * 60000 + getRandomDelayMs(), 5000, function() return work end)
                     end
                 end
             end
@@ -573,42 +884,45 @@ function acef.onArizonaDisplay(packet)
     if not acef.decode(packet) then return end
     
     if packet.event == 'event.inventory.playerInventory' then
-        local data = packet.json and packet.json[1]
+        local data = type(packet.json) == 'table' and packet.json[1] or nil
         if not data or not data.data then return end
         
         if data.data.type ~= 1 and data.data.type ~= 2 and data.data.type ~= 3 then return end
         if data.action ~= 0 and data.action ~= 1 and data.action ~= 2 and data.action ~= 3 then return end
         
         local items = data.data.items
-        if not items then return end
+        if type(items) ~= 'table' then return end
         
         for _, item in ipairs(items) do
-            if item and item.item and item.slot then
-                local amount = item.amount or 1
+            local item_id = item and tonumber(item.item) or nil
+            local slot = item and tonumber(item.slot) or nil
+            if item_id and slot then
+                local amount = normalizeInteger(item.amount, 1, 1, 999999)
                 
-                if debug_mode and debug_mode[0] and cef and cef[0] then
+                if getBoolValue(debug_mode, cfg.settings.dbg) and getBoolValue(cef, cfg.settings.cef) then
                     sampAddChatMessage(
                         string.format("[Информация] {FF6347}[CEF] {FFFFFF}Слот {FFD700}%d {FFFFFF}| Модель: {42B02C}%d", 
-                            item.slot, item.item), 
+                            slot, item_id), 
                         0x96FF00
                     )
                 end
                 
-                safeSetInventoryItem(item.slot, {
-                    slot = item.slot,
-                    available = item.available,
-                    item = item.item,
+                safeSetInventoryItem(slot, {
+                    slot = slot,
+                    available = item.available == true,
+                    item = item_id,
                     amount = amount
                 })
             else
-                if item and item.slot then
-                    safeRemoveInventoryItem(item.slot)
+                if slot then
+                    safeRemoveInventoryItem(slot)
                 end
             end
         end
         
-        if alt_model_id and alt_model_id[0] and alt_model_id[0] > 0 then
-            FindAltItem(inventory, alt_model_id[0])
+        local alt_model_value = getIntValue(alt_model_id, cfg.settings.alt_model_id, 1, 999999)
+        if alt_model_value > 0 then
+            FindAltItem(inventory, alt_model_value)
         end
         
         if targetId and targetId > 0 then
@@ -618,80 +932,73 @@ function acef.onArizonaDisplay(packet)
 end
 
 function se.onShowTextDraw(id, data)
-    if not id or not data then return end
-    if not data or type(data) ~= 'table' then return end
-    
-    if debug_mode and debug_mode[0] and cef and not cef[0] then
-        if data.modelId and data.modelId ~= 0 then
-            sampAddChatMessage(
-                string.format("[Информация] {FF6347}[TD] {FFFFFF}Модель: {42B02C}%d", data.modelId), 
-                0x96FF00
-            )
-        end
-    end
-    
-    local text = data.text or ""
-    if text == 'INVENTORY' or (text == '…H‹EHЏAP’' and data.style == 2) then
-        inventory_id = id
-        if not cfg.settings.connected then
-            cfg.settings.connected = true
-            inicfg.save(cfg, 'sawnoff_auto_collector.ini')
-        end
-    end
-    
-    if id == 65535 then
-        if targetId and targetId > 0 then findItemById(inventory, targetId) end
-        if alt_model_id and alt_model_id[0] and alt_model_id[0] > 0 then FindAltItem(inventory, alt_model_id[0]) end
+    local textdraw_id = tonumber(id)
+    if not textdraw_id or type(data) ~= 'table' then return end
+    local sawnoff_state, alt_state = ensureStateTables()
+    local model_id = tonumber(data.modelId)
+    local background_color = tonumber(data.backgroundColor)
+    local rotation = type(data.rotation) == 'table' and data.rotation or nil
+    local text = type(data.text) == 'string' and data.text or ''
+    local style = tonumber(data.style)
+    local alt_model_value = getIntValue(alt_model_id, cfg.settings.alt_model_id, 1, 999999)
+
+    if getBoolValue(debug_mode, cfg.settings.dbg) and not getBoolValue(cef, cfg.settings.cef) and model_id and model_id ~= 0 then
+        sampAddChatMessage(
+            string.format('[Информация] {FF6347}[TD] {FFFFFF}Модель: {42B02C}%d', model_id),
+            0x96FF00
+        )
     end
 
-    if data.modelId and data.rotation and type(data.rotation) == 'table' then
-        if data.modelId == 350 and data.rotation.x == -20 and data.rotation.y == 0 and data.rotation.z == 75 and 
-           (data.backgroundColor == -13469276 or data.backgroundColor == -13149076) then
-            if sawnoff and type(sawnoff) == 'table' then
-                sawnoff.textdraw_id = id
-            end
+    if text == 'INVENTORY' or (text == '…H‹EHЏAP’' and style == 2) then
+        inventory_id = textdraw_id
+        if not cfg.settings.connected then
+            cfg.settings.connected = true
+            safeSaveConfig()
         end
     end
-    
-    if alt_model_id and alt_model_id[0] and data.modelId == alt_model_id[0] then
-        if alt and type(alt) == 'table' then
-            alt[1] = id
-        end
+
+    if textdraw_id == 65535 then
+        if targetId and targetId > 0 then findItemById(inventory, targetId) end
+        if alt_model_value > 0 then FindAltItem(inventory, alt_model_value) end
     end
-    
+
+    if model_id == 350 and rotation and tonumber(rotation.x) == -20 and tonumber(rotation.y) == 0 and tonumber(rotation.z) == 75 and
+       (background_color == -13469276 or background_color == -13149076) then
+        sawnoff_state.textdraw_id = textdraw_id
+    end
+
+    if alt_model_value > 0 and model_id == alt_model_value then
+        alt_state[1] = textdraw_id
+    end
+
     if text == 'PUT' or text == 'HAѓEЏ’' then
-        if sawnoff and type(sawnoff) == 'table' then
-            sawnoff[4] = false
-            sawnoff.textdraw_put_id = id + 1
-        end
-        if alt and type(alt) == 'table' then
-            alt[4] = false
-            alt[2] = id + 1
-        end
+        sawnoff_state[4] = false
+        sawnoff_state.textdraw_put_id = textdraw_id + 1
+        alt_state[4] = false
+        alt_state[2] = textdraw_id + 1
     end
     if text == 'USE' or text == '…CЊO‡’€O‹AЏ’' then
-        if sawnoff and type(sawnoff) == 'table' then
-            sawnoff[4] = true
-            sawnoff.textdraw_use_id = id + 1
-        end
-        if alt and type(alt) == 'table' then
-            alt[4] = true
-            alt[3] = id + 1
-        end
+        sawnoff_state[4] = true
+        sawnoff_state.textdraw_use_id = textdraw_id + 1
+        alt_state[4] = true
+        alt_state[3] = textdraw_id + 1
     end
 end
 
 function send_cef(str)
-    if not str or type(str) ~= 'string' or #str == 0 then return end
-    local bs = raknetNewBitStream()
-    if not bs then return end
-    raknetBitStreamWriteInt8(bs, 220)
-    raknetBitStreamWriteInt8(bs, 18)
-    raknetBitStreamWriteInt16(bs, #str)
-    raknetBitStreamWriteString(bs, str)
-    raknetBitStreamWriteInt32(bs, 0)
-    raknetSendBitStream(bs)
-    raknetDeleteBitStream(bs)
+    if type(str) ~= 'string' or str == '' or not isSampReady() then return false end
+    local ok, bs = pcall(raknetNewBitStream)
+    if not ok or not bs then return false end
+    local success = pcall(function()
+        raknetBitStreamWriteInt8(bs, 220)
+        raknetBitStreamWriteInt8(bs, 18)
+        raknetBitStreamWriteInt16(bs, #str)
+        raknetBitStreamWriteString(bs, str)
+        raknetBitStreamWriteInt32(bs, 0)
+        raknetSendBitStream(bs)
+    end)
+    pcall(raknetDeleteBitStream, bs)
+    return success
 end
 
 function findItemById(inventory, targetId)
@@ -729,6 +1036,8 @@ imgui.OnInitialize(function()
 end)
 
 imgui.OnFrame(function() return main_window and main_window[0] and not isPauseMenuActive() end, function(self)
+    normalizeConfig()
+    if not Font or not Font[18] or not Font[24] then return end
     imgui.SetNextWindowPos(imgui.ImVec2(sw / 2, sh / 2), imgui.Cond.FirstUseEver, imgui.ImVec2(0.5, 0.5))
     imgui.Begin('##main_window', main_window, imgui.WindowFlags.NoResize + imgui.WindowFlags.NoTitleBar)
     imgui.BeginChild('##menu', imgui.ImVec2(520, 450), true)
@@ -745,16 +1054,16 @@ imgui.OnFrame(function() return main_window and main_window[0] and not isPauseMe
     imgui.PopStyleColor(3)
     imgui.PopFont()
     imgui.PushFont(Font[24])
-    imgui.CenterText('Управление с обрезом')
+    imgui.CenterText('патронов c аксессуара «Обрез»')
     imgui.PopFont()
     imgui.PushFont(Font[18])
     imgui.CenterText('Remake by SAKUTA')
     imgui.PopFont()
     imgui.PushFont(Font[18])
-    imgui.CenterText('Текущая версия: ' .. thisScript().version)
+    imgui.CenterText('Версия скрипта: ' .. thisScript().version)
     imgui.Separator()
     
-    imgui.Checkbox(u8'  Включить автостарт при входе в игру', auto_start)
+    imgui.Checkbox(u8' Запускать скрипт при подключении к серверу', auto_start)
     if auto_start and auto_start[0] then 
         if cfg.settings.auto_start ~= auto_start[0] then
             cfg.settings.auto_start = true
@@ -767,7 +1076,7 @@ imgui.OnFrame(function() return main_window and main_window[0] and not isPauseMe
         end
     end
     
-    imgui.Checkbox(u8'  Случайная задержка: вкл', random_delay)
+    imgui.Checkbox(u8' Рандомная задержка: от', random_delay)
     if random_delay and random_delay[0] then
         if cfg.settings.random_delay ~= random_delay[0] then
             cfg.settings.random_delay = true
@@ -780,7 +1089,7 @@ imgui.OnFrame(function() return main_window and main_window[0] and not isPauseMe
         end
     end
     imgui.PushItemWidth(30)
-    imgui.InputInt(u8'  Мин.  мин##random_delay_time_min', random_delay_time_min, 0, 0, imgui.SameLine())
+    imgui.InputInt(u8' мин.  до##random_delay_time_min', random_delay_time_min, 0, 0, imgui.SameLine())
     if random_delay_time_min and random_delay_time_min[0] then
         if random_delay_time_min[0] < 0 then random_delay_time_min[0] = 0 end
         if random_delay_time_max and random_delay_time_max[0] and random_delay_time_min[0] > random_delay_time_max[0] then random_delay_time_min[0] = random_delay_time_max[0] end
@@ -789,7 +1098,7 @@ imgui.OnFrame(function() return main_window and main_window[0] and not isPauseMe
             inicfg.save(cfg, 'sawnoff_auto_collector.ini')
         end
     end
-    imgui.InputInt(u8'  Макс.##random_delay_time_max', random_delay_time_max, 0, 0, imgui.SameLine())
+    imgui.InputInt(u8' мин.##random_delay_time_max', random_delay_time_max, 0, 0, imgui.SameLine())
     if random_delay_time_max and random_delay_time_max[0] then
         if random_delay_time_max[0] > 99 then random_delay_time_max[0] = 99 end
         if random_delay_time_min and random_delay_time_min[0] and random_delay_time_max[0] < random_delay_time_min[0] then random_delay_time_max[0] = random_delay_time_min[0] end
@@ -804,7 +1113,7 @@ imgui.OnFrame(function() return main_window and main_window[0] and not isPauseMe
     local swap_old = auto_swap and auto_swap[0]
     local cycle_old = auto_cycle_cd and auto_cycle_cd[0]
     
-    imgui.Checkbox(u8' Смена оружия на альт (вкл/выкл)', auto_swap)
+    imgui.Checkbox(u8' Авто смена на предмет (вкл/выкл)', auto_swap)
     if auto_swap and auto_swap[0] ~= swap_old then
         if auto_swap[0] then
             if auto_cycle_cd then auto_cycle_cd[0] = false end
@@ -817,7 +1126,7 @@ imgui.OnFrame(function() return main_window and main_window[0] and not isPauseMe
         if work and auto_swap and auto_swap[0] then startAutoSwapThread() end
     end
     
-    imgui.Checkbox(u8' Смена оружия на обрез по кулдауну', auto_cycle_cd)
+    imgui.Checkbox(u8' Авто смена на обрез после КД', auto_cycle_cd)
     if auto_cycle_cd and auto_cycle_cd[0] ~= cycle_old then
         if auto_cycle_cd[0] then
             if auto_swap then auto_swap[0] = false end
@@ -846,7 +1155,7 @@ imgui.OnFrame(function() return main_window and main_window[0] and not isPauseMe
     end
 
     imgui.SameLine()
-    imgui.Checkbox(u8' CEF Режим', cef)
+    imgui.Checkbox(u8' CEF Инвентарь', cef)
     if cef and cef[0] then
         if cfg.settings.cef ~= cef[0] then cfg.settings.cef = true; inicfg.save(cfg, 'sawnoff_auto_collector.ini') end
     else
@@ -861,11 +1170,11 @@ imgui.OnFrame(function() return main_window and main_window[0] and not isPauseMe
         if cfg.settings.dbg ~= debug_mode[0] then cfg.settings.dbg = false; inicfg.save(cfg, 'sawnoff_auto_collector.ini') end
     end
     
-    imgui.InputInt(u8' ID альт предмета', alt_model_id, 0, 0)
+    imgui.InputInt(u8' ID модели предмета', alt_model_id, 0, 0)
     if alt_model_id and alt_model_id[0] and cfg.settings.alt_model_id ~= alt_model_id[0] then cfg.settings.alt_model_id = alt_model_id[0]; inicfg.save(cfg, 'sawnoff_auto_collector.ini') end
     imgui.Separator()
     
-    imgui.Checkbox(u8' Не закрывать инвентарь после работы', open_inventory)
+    imgui.Checkbox(u8' Не закрывать инвентарь после первого открытия', open_inventory)
     if open_inventory and open_inventory[0] then
         if cfg.settings.open_inventory ~= open_inventory[0] then
             cfg.settings.open_inventory = true
@@ -878,10 +1187,10 @@ imgui.OnFrame(function() return main_window and main_window[0] and not isPauseMe
         end
     end
     
-    imgui.Checkbox(u8' Задержка перед стартом:', timer)
+    imgui.Checkbox(u8' Запустить скрипт через:', timer)
     imgui.PushItemWidth(30)
     imgui.SameLine()
-    imgui.InputInt(u8'  мин.##timer_time', timer_time, 0, 0)
+    imgui.InputInt(u8' мин.##timer_time', timer_time, 0, 0)
     if timer_time and timer_time[0] then
         if timer_time[0] < 0 then timer_time[0] = 0 end
         timer[0] = (timer_time[0] > 0 and timer_time[0] <= 99)
@@ -899,7 +1208,7 @@ imgui.OnFrame(function() return main_window and main_window[0] and not isPauseMe
         imgui.PushStyleColor(imgui.Col.ButtonHovered, imgui.ImVec4(0.00, 0.66, 0.00, 1.00))
         imgui.PushStyleColor(imgui.Col.ButtonActive, imgui.ImVec4(0.00, 0.50, 0.00, 1.00))
     end
-    if imgui.Button(work and u8'Остановить' or u8'Запустить', imgui.ImVec2(170, 30)) then 
+    if imgui.Button(work and u8'Выключить' or u8'Включить', imgui.ImVec2(170, 30)) then 
         if not work then
             if cfg.settings.connected and sampGetGamestate() == 3 and sampIsLocalPlayerSpawned() then
                 work = true
@@ -907,24 +1216,24 @@ imgui.OnFrame(function() return main_window and main_window[0] and not isPauseMe
                 if auto_swap and auto_swap[0] then startAutoSwapThread() end
                 if auto_cycle_cd and auto_cycle_cd[0] and not cycle_thread_running then startCycleWithCD() end
                 if timer and timer[0] and timer_time and timer_time[0] and timer_time[0] ~= 0 and timer_time[0] > 0 then
-                    sampAddChatMessage('[Автосбор] {FFFFFF}Автоматический сбор: {42B02C}запущен{FFFFFF}.', 0x96FF00)
-                    sampAddChatMessage('[Автосбор] {FFFFFF}Задержка {FFD700}'..timer_time[0]..' {FFFFFF}мин.', 0x96FF00)
+                    sampAddChatMessage('[Информация] {FFFFFF}Автоматический сбор обреза: {42B02C}включен{FFFFFF}.', 0x96FF00)
+                    sampAddChatMessage('[Информация] {FFFFFF}Запуск через {FFD700}'..timer_time[0]..' {FFFFFF}мин.', 0x96FF00)
                 else
-                    sampAddChatMessage('[Автосбор] {FFFFFF}Автоматический сбор: {42B02C}запущен{FFFFFF}.', 0x96FF00)
+                    sampAddChatMessage('[Информация] {FFFFFF}Автоматический сбор обреза: {42B02C}включен{FFFFFF}.', 0x96FF00)
                 end
             else
-                sampAddChatMessage('[Автосбор] {FFFFFF}Вы не подключены к игре.', 0x96FF00)
+                sampAddChatMessage('[Информация] {FFFFFF}Вы не подключены к серверу.', 0x96FF00)
             end
         else
             sampSendClickTextdraw(65535)
             work = false
-            sampAddChatMessage('[Автосбор] {FFFFFF}Автоматический сбор: {FF6347}остановлен{FFFFFF}.', 0x96FF00)
+            sampAddChatMessage('[Информация] {FFFFFF}Автоматический сбор обреза: {FF6347}выключен{FFFFFF}.', 0x96FF00)
         end
     end
     imgui.PopStyleColor(3)
     
     imgui.SameLine()
-    if imgui.Button(u8'Проверить обновление', imgui.ImVec2(170, 30)) then
+    if imgui.Button(u8'Проверка обновления', imgui.ImVec2(170, 30)) then
         checkForUpdate(true)
     end
     imgui.SameLine()
@@ -940,12 +1249,15 @@ end)
 
 function swapToAlt(scheduleReturn)
     if scheduleReturn == nil then scheduleReturn = true end
-    if alt_model_id == nil then alt_model_id = imgui.new.int(cfg.settings.alt_model_id or 3166) end
-    if alt_model_id[0] == nil then alt_model_id[0] = cfg.settings.alt_model_id or 3166 end
-    cfg.settings.alt_model_id = alt_model_id[0]
-    inicfg.save(cfg, 'sawnoff_auto_collector.ini')
+    ensureStateTables()
+    normalizeConfig()
+    local alt_model_value = getIntValue(alt_model_id, cfg.settings.alt_model_id, 1, 999999)
+    local keep_inventory_open = getBoolValue(open_inventory, cfg.settings.open_inventory)
+    setIntValue(alt_model_id, alt_model_value)
+    cfg.settings.alt_model_id = alt_model_value
+    safeSaveConfig()
 
-    if cef and cef[0] then
+    if getBoolValue(cef, cfg.settings.cef) then
         openInventoryAndWait()
         wait(333)
         local wait_count = 0
@@ -953,102 +1265,115 @@ function swapToAlt(scheduleReturn)
             wait(100)
             wait_count = wait_count + 1
             if wait_count > 50 then break end
-        until next(inventory) ~= nil
+        until next(ensureInventoryTable()) ~= nil or not work
         
-        local alt_slot = FindAltItem(inventory, alt_model_id[0])
+        local alt_slot = FindAltItem(inventory, alt_model_value)
         if alt_slot then
             if alt_slot ~= 3 then
-                send_cef('inventory.moveItemForce|{"slot": ' .. alt_slot .. ', "type": 1, "amount": 1}')
+                send_cef('inventory.moveItemForce|{"slot": ' .. tostring(alt_slot) .. ', "type": 1, "amount": 1}')
                 wait(333)
             end
-            sampAddChatMessage('[Информация] {FFFFFF}Альт-предмет (ID '..alt_model_id[0]..') одет. [CEF]', 0x96FF00)
-            sampSendClickTextdraw(65535)
+            sampAddChatMessage('[Информация] {FFFFFF}Альт-предмет (ID '..alt_model_value..') одет. [CEF]', 0x96FF00)
+            if not keep_inventory_open then
+                sampSendClickTextdraw(65535)
+            end
             wait(333)
-            if scheduleReturn and auto_swap and auto_swap[0] then
-                local dur = 5
+            if scheduleReturn and getBoolValue(auto_swap, cfg.settings.auto_swap) then
                 lua_thread.create(function()
-                    wait(dur * 60000)
-                    swapToSawnoff()
+                    waitInSteps(5 * 60000, 1000, function() return work end)
+                    if work then
+                        swapToSawnoff()
+                    end
                 end)
             end
         else
-            sampAddChatMessage('[Информация] {FFFFFF}Альтернативный предмет с ID: {FFD700}'..alt_model_id[0]..' {FF6347}не найден{FFFFFF}. [CEF]', 0x96FF00)
+            sampAddChatMessage('[Информация] {FFFFFF}Альтернативный предмет с ID: {FFD700}'..alt_model_value..' {FF6347}не найден{FFFFFF}. [CEF]', 0x96FF00)
             sampAddChatMessage('[Информация] {FFFFFF}Auto Swap {FF6347}отключен{FFFFFF}. Обрез будет собираться без свапа. [CEF]', 0x96FF00)
-            if auto_swap then auto_swap[0] = false end
+            setBoolValue(auto_swap, false)
             cfg.settings.auto_swap = false
-            inicfg.save(cfg, 'sawnoff_auto_collector.ini')
+            safeSaveConfig()
         end
     else
         openInventoryAndWait()
-        if alt and type(alt) == 'table' and alt[1] ~= nil and sampTextdrawIsExists(alt[1]) then
+        local _, alt_state = ensureStateTables()
+        if alt_state[1] and sampTextdrawIsExists(alt_state[1]) then
             if not isInventoryTextdrawValid() then
+                local retry = 0
                 repeat
                     sampSendChat('/invent')
                     wait(1000)
-                until not work or isInventoryTextdrawValid()
+                    retry = retry + 1
+                until not work or isInventoryTextdrawValid() or retry > 5
             end
-            if alt then alt[5] = true end
-            safeClick(alt[1])
+            alt_state[5] = true
+            safeClick(alt_state[1])
             local waited = 0
             local opt = nil
             repeat
-                if alt[3] and sampTextdrawIsExists(alt[3]) then opt = 'use'; break end
-                if alt[2] and sampTextdrawIsExists(alt[2]) then opt = 'put'; break end
+                if alt_state[3] and sampTextdrawIsExists(alt_state[3]) then opt = 'use'; break end
+                if alt_state[2] and sampTextdrawIsExists(alt_state[2]) then opt = 'put'; break end
                 wait(100)
                 waited = waited + 100
-            until waited > 2000
+            until waited > 2000 or not work
             if opt == 'use' then
-                if alt[3] then safeClick(alt[3]) end
+                safeClick(alt_state[3])
             elseif opt == 'put' then
-                if alt[2] then safeClick(alt[2]) end
+                safeClick(alt_state[2])
             end
             wait(500)
-            if open_inventory and not open_inventory[0] then sampSendClickTextdraw(65535) end
-            sampAddChatMessage('[Информация] {FFFFFF}Сменен предмет на ID: {FFD700}'..alt_model_id[0], 0x96FF00)
-            if scheduleReturn and auto_swap and auto_swap[0] then
-                local dur = 5
+            if not keep_inventory_open then sampSendClickTextdraw(65535) end
+            sampAddChatMessage('[Информация] {FFFFFF}Сменен предмет на ID: {FFD700}'..alt_model_value, 0x96FF00)
+            if scheduleReturn and getBoolValue(auto_swap, cfg.settings.auto_swap) then
                 lua_thread.create(function()
-                    wait(dur * 60000)
-                    swapToSawnoff()
+                    waitInSteps(5 * 60000, 1000, function() return work end)
+                    if work then
+                        swapToSawnoff()
+                    end
                 end)
             end
         else
-            sampAddChatMessage('[Автосбор] {FFFFFF}Предмета с таким ID нет в инвентаре.', 0x96FF00)
+            sampAddChatMessage('[Информация] {FFFFFF}Альтернативный предмет не найден в инвентаре.', 0x96FF00)
         end
     end
 end
 
 function swapToSawnoff()
-    if cef and cef[0] then
+    ensureStateTables()
+    local keep_inventory_open = getBoolValue(open_inventory, cfg.settings.open_inventory)
+
+    if getBoolValue(cef, cfg.settings.cef) then
         openInventoryAndWait()
         wait(333)
         local sawnoff_slot = findItemById(inventory, targetId)
         if sawnoff_slot then
-            if sawnoff and type(sawnoff) == 'table' then sawnoff[5] = true end
+            sawnoff[5] = true
             if sawnoff_slot == 3 then
                 send_cef('clickOnButton|{"type": 2,"slot": 3, "action": 1}')
                 sampAddChatMessage('[Информация] {FFFFFF}Вернулся предмет Sawnoff [CEF].', 0x96FF00)
-                sampSendClickTextdraw(65535)
             else
-                send_cef('inventory.moveItemForce|{"slot": ' .. sawnoff_slot .. ', "type": 1, "amount": 1}')
+                send_cef('inventory.moveItemForce|{"slot": ' .. tostring(sawnoff_slot) .. ', "type": 1, "amount": 1}')
                 wait(333)
                 send_cef('clickOnButton|{"type": 2,"slot": 3, "action": 1}')
-                sampSendClickTextdraw(65535)
                 sampAddChatMessage('[Информация] {FFFFFF}Вернулся предмет Sawnoff [CEF].', 0x96FF00)
             end
+            if not keep_inventory_open then
+                sampSendClickTextdraw(65535)
+            end
         else
-            sampAddChatMessage('[Автосбор] {FFFFFF}Sawnoff не найден в инвентаре. [CEF]', 0x96FF00)
+            sampAddChatMessage('[Информация] {FFFFFF}Sawnoff не найден в инвентаре. [CEF]', 0x96FF00)
         end
     else
         openInventoryAndWait()
-        if sawnoff and type(sawnoff) == 'table' and sawnoff.textdraw_id and sampTextdrawIsExists(sawnoff.textdraw_id) then
+        if sawnoff.textdraw_id and sampTextdrawIsExists(sawnoff.textdraw_id) then
             if not isInventoryTextdrawValid() then
+                local retry = 0
                 repeat
                     sampSendChat('/invent')
                     wait(1000)
-                until not work or isInventoryTextdrawValid()
+                    retry = retry + 1
+                until not work or isInventoryTextdrawValid() or retry > 5
             end
-            if sawnoff then sawnoff[5] = true end
+            sawnoff[5] = true
             safeClick(sawnoff.textdraw_id)
             local waited = 0
             local opt = nil
@@ -1057,29 +1382,29 @@ function swapToSawnoff()
                 if sawnoff.textdraw_put_id and sampTextdrawIsExists(sawnoff.textdraw_put_id) then opt = 'put'; break end
                 wait(100)
                 waited = waited + 100
-            until waited > 2000
+            until waited > 2000 or not work
             if opt == 'use' then
-                if sawnoff.textdraw_use_id then safeClick(sawnoff.textdraw_use_id) end
+                safeClick(sawnoff.textdraw_use_id)
             elseif opt == 'put' then
-                if sawnoff.textdraw_put_id then safeClick(sawnoff.textdraw_put_id) end
+                safeClick(sawnoff.textdraw_put_id)
             end
             wait(500)
-            if open_inventory and not open_inventory[0] then sampSendClickTextdraw(65535) end
+            if not keep_inventory_open then sampSendClickTextdraw(65535) end
             sampAddChatMessage('[Информация] {FFFFFF}Вернулся предмет Sawnoff .', 0x96FF00)
         else
-            sampAddChatMessage('[Автосбор] {FFFFFF}Sawnoff не найден в инвентаре.', 0x96FF00)
+            sampAddChatMessage('[Информация] {FFFFFF}Sawnoff не найден в инвентаре.', 0x96FF00)
         end
     end
 end
 
 function startAutoSwapThread()
     if swap_thread_running then return end
-    if not auto_swap or not auto_swap[0] then return end
+    if not getBoolValue(auto_swap, cfg.settings.auto_swap) then return end
     swap_thread_running = true
     lua_thread.create(function()
-        while work and auto_swap and auto_swap[0] do
+        while work and getBoolValue(auto_swap, cfg.settings.auto_swap) do
             local t = os.date('*t')
-            local secs_now = t.min * 60 + t.sec
+            local secs_now = (tonumber(t.min) or 0) * 60 + (tonumber(t.sec) or 0)
             local target1 = 28 * 60
             local target2 = 58 * 60
             local diff1 = target1 - secs_now
@@ -1087,11 +1412,10 @@ function startAutoSwapThread()
             local diff2 = target2 - secs_now
             if diff2 <= 0 then diff2 = diff2 + 3600 end
             local wait_secs = (diff1 <= diff2) and diff1 or diff2
-            wait(wait_secs * 1000)
-            if not work or not auto_swap or not auto_swap[0] then break end
+            waitInSteps(wait_secs * 1000, 1000, function() return work and getBoolValue(auto_swap, cfg.settings.auto_swap) end)
+            if not work or not getBoolValue(auto_swap, cfg.settings.auto_swap) then break end
             swapToAlt(false)
-            local dur = 5
-            wait(dur * 60000)
+            waitInSteps(5 * 60000, 1000, function() return work end)
             if not work then break end
             swapToSawnoff()
         end
@@ -1100,73 +1424,82 @@ function startAutoSwapThread()
 end
 
 isInventoryTextdrawValid = function()
-    return inventory_id ~= nil and sampTextdrawIsExists(inventory_id)
+    local id = tonumber(inventory_id)
+    return id ~= nil and sampTextdrawIsExists(id)
 end
 
 clickInventoryTextdraw = function()
-    if inventory_id and sampTextdrawIsExists(inventory_id) then
-        sampSendClickTextdraw(inventory_id)
-    end
-end
-
-safeClick = function(id)
+    local id = tonumber(inventory_id)
     if id and sampTextdrawIsExists(id) then
         sampSendClickTextdraw(id)
     end
 end
 
+safeClick = function(id)
+    local textdraw_id = tonumber(id)
+    if textdraw_id and sampTextdrawIsExists(textdraw_id) then
+        sampSendClickTextdraw(textdraw_id)
+    end
+end
+
 textdrawExists = function(id)
-    return id and sampTextdrawIsExists(id)
+    local textdraw_id = tonumber(id)
+    return textdraw_id ~= nil and sampTextdrawIsExists(textdraw_id)
 end
 
 function se.onShowDialog(dialogId, style, title, button1, button2, text)
-    if not title then return end
-    if inventory_fix and title:find('Игровое меню') then
+    if type(title) ~= 'string' then return end
+    if inventory_fix and title:find('Игровое меню', 1, true) then
         sampSendDialogResponse(dialogId, 0, nil, nil)
         inventory_fix = false
         return false
     end
-    if title:find('Информация об аренде') then
+    if title:find('Информация об аренде', 1, true) then
         sampAddChatMessage('[Информация] {FFFFFF}Аксессуар "Обрез" находиться в {FF6347}Аренде! {FFFFFF}Скрипт {FF6347}выключен.', 0x96FF00)
         work = false
     end
 end
 
 function se.onApplyPlayerAnimation(playerId, animLib, animName, frameDelta, loop, lockX, lockY, freeze, time)
-    local sawnoff_state = ensureStateTables()
-    if not work or not sawnoff_state[5] then return end
-    local local_player_id = getLocalPlayerId()
-    if local_player_id and playerId == local_player_id and animLib == 'BOMBER' then
-        sawnoff_state[5] = false
+    if work and sawnoff and sawnoff[5] then
+        local myPed = getPlayerPed()
+        if myPed then
+            local _, myId = sampGetPlayerIdByCharHandle(myPed)
+            if playerId == myId and animLib == 'BOMBER' then
+                sawnoff[5] = false
+            end
+        end
     end
 end
-
 function onReceivePacket(id)
-    if id == 31 or id == 32 or id == 33 or id == 12 or id == 35 or id == 36 or id == 37 then
+    local packet_id = tonumber(id)
+    if not packet_id then return end
+
+    if packet_id == 31 or packet_id == 32 or packet_id == 33 or packet_id == 12 or packet_id == 35 or packet_id == 36 or packet_id == 37 then
         safeClearInventory()
         inventory_id = nil
-        sawnoff = { textdraw_id = nil, textdraw_put_id = nil, textdraw_use_id = nil, [4] = false, [5] = false }
-        alt = {_, _, _, false, false}
+        sawnoff = resetSawnoffState()
+        alt = resetAltState()
+        delay_time = nil
         cfg.settings.connected = false
-        inicfg.save(cfg, 'sawnoff_auto_collector.ini')
+        safeSaveConfig()
         if work then work = false end
-    elseif id == 34 then
+    elseif packet_id == 34 then
         safeClearInventory()
         inventory_id = nil
-        sawnoff = { textdraw_id = nil, textdraw_put_id = nil, textdraw_use_id = nil, [4] = false, [5] = false }
-        alt = {_, _, _, false, false}
+        sawnoff = resetSawnoffState()
+        alt = resetAltState()
+        delay_time = nil
         cfg.settings.connected = true
-        inicfg.save(cfg, 'sawnoff_auto_collector.ini')
-        if auto_start and auto_start[0] then
-            lua_thread.create(function() 
+        safeSaveConfig()
+        if getBoolValue(auto_start, cfg.settings.auto_start) then
+            lua_thread.create(function()
                 repeat wait(0) until sampIsLocalPlayerSpawned() and sampGetGamestate() == 3
-                if cfg.settings.connected then
-                    if not work then
-                        work = true
-                        sampAddChatMessage('[Информация] {FFFFFF}Автоматический сбор обреза: {42B02C}включен{FFFFFF}.', 0x96FF00)
-                        if auto_swap and auto_swap[0] then startAutoSwapThread() end
-                        if auto_cycle_cd and auto_cycle_cd[0] and not cycle_thread_running then startCycleWithCD() end
-                    end
+                if cfg.settings.connected and not work then
+                    work = true
+                    sampAddChatMessage('[Информация] {FFFFFF}Автоматический сбор обреза: {42B02C}включен{FFFFFF}.', 0x96FF00)
+                    if getBoolValue(auto_swap, cfg.settings.auto_swap) then startAutoSwapThread() end
+                    if getBoolValue(auto_cycle_cd, cfg.settings.auto_cycle_cd) and not cycle_thread_running then startCycleWithCD() end
                 end
             end)
         end
@@ -1175,12 +1508,13 @@ end
 
 function onQuitGame()
     cfg.settings.connected = false
-    inicfg.save(cfg, 'sawnoff_auto_collector.ini')
+    safeSaveConfig()
 end
 
 function imgui.CenterText(text)
-    imgui.SetCursorPosX(imgui.GetWindowWidth() / 2 - imgui.CalcTextSize(u8(text)).x / 2)
-    imgui.Text(u8(text))
+    local label = tostring(text or '')
+    imgui.SetCursorPosX(imgui.GetWindowWidth() / 2 - imgui.CalcTextSize(u8(label)).x / 2)
+    imgui.Text(u8(label))
 end
 
 function imgui.Theme()
