@@ -1,5 +1,5 @@
 script_name("Sawnoff")
-script_version("2.0.0")
+script_version("2.0.1")
 script_author('SAKUTA')
 
 local se = require 'lib.samp.events'
@@ -79,6 +79,146 @@ local update_available = false
 local update_notified = false
 local update_check_running = false
 
+<<<<<<< HEAD
+=======
+-- Функция ожидания появления предмета в инвентаре (для CEF)
+local function waitForItemInInventory(item_id, maxAttempts, delayMs)
+    maxAttempts = maxAttempts or 15
+    delayMs = delayMs or 200
+    for attempt = 1, maxAttempts do
+        local slot, data = findItemById(inventory, item_id)
+        if slot then
+            return slot, data
+        end
+        wait(delayMs)
+    end
+    return nil, nil
+end
+
+local function getBoolValue(ref, fallback)
+    if type(ref) == 'table' and ref[0] ~= nil then
+        return ref[0] == true
+    end
+    return fallback == true
+end
+
+local function setBoolValue(ref, value)
+    if type(ref) == 'table' then
+        ref[0] = value == true
+    end
+end
+
+local function getIntValue(ref, fallback, min_value, max_value)
+    local value = fallback
+    if type(ref) == 'table' and ref[0] ~= nil then
+        value = ref[0]
+    end
+    return normalizeInteger(value, fallback, min_value, max_value)
+end
+
+local function setIntValue(ref, value)
+    if type(ref) == 'table' then
+        ref[0] = value
+    end
+end
+
+local function ensureInventoryTable()
+    if type(inventory) ~= 'table' then
+        inventory = {}
+    end
+    return inventory
+end
+
+local function ensureStateTables()
+    if type(sawnoff) ~= 'table' then
+        sawnoff = resetSawnoffState()
+    end
+    if type(alt) ~= 'table' then
+        alt = resetAltState()
+    end
+    return sawnoff, alt
+end
+
+local function normalizeUiState()
+    normalizeConfig()
+    setBoolValue(auto_start, cfg.settings.auto_start)
+    setBoolValue(random_delay, cfg.settings.random_delay)
+    setIntValue(random_delay_time_min, cfg.settings.random_delay_time_min)
+    setIntValue(random_delay_time_max, cfg.settings.random_delay_time_max)
+    setBoolValue(open_inventory, cfg.settings.open_inventory)
+    setBoolValue(cef, cfg.settings.cef)
+    setBoolValue(auto_swap, cfg.settings.auto_swap)
+    setIntValue(alt_model_id, cfg.settings.alt_model_id)
+    setBoolValue(debug_mode, cfg.settings.dbg)
+    setBoolValue(auto_cycle_cd, cfg.settings.auto_cycle_cd)
+    setBoolValue(auto_update, cfg.settings.auto_update)
+end
+
+local function normalizeRandomDelayRange()
+    local min_value = getIntValue(random_delay_time_min, cfg.settings.random_delay_time_min, 0, 99)
+    local max_value = getIntValue(random_delay_time_max, cfg.settings.random_delay_time_max, 0, 99)
+    if min_value > max_value then
+        min_value = max_value
+    end
+    setIntValue(random_delay_time_min, min_value)
+    setIntValue(random_delay_time_max, max_value)
+    cfg.settings.random_delay_time_min = min_value
+    cfg.settings.random_delay_time_max = max_value
+    return min_value, max_value
+end
+
+local function getRandomDelayMs()
+    if not getBoolValue(random_delay, cfg.settings.random_delay) then
+        return 0
+    end
+    local min_value, max_value = normalizeRandomDelayRange()
+    if min_value > max_value then
+        min_value = max_value
+    end
+    return math.random(min_value * 60000, max_value * 60000)
+end
+
+local function getCooldownMinutes(value, fallback)
+    return normalizeInteger(value, fallback or 60, 0, 9999)
+end
+
+local function getTimerMinutes()
+    local minutes = getIntValue(timer_time, 0, 0, 99)
+    setIntValue(timer_time, minutes)
+    setBoolValue(timer, minutes > 0)
+    return minutes
+end
+
+local function waitInSteps(total_ms, step_ms, condition)
+    local remaining = normalizeInteger(total_ms, 0, 0)
+    local step = normalizeInteger(step_ms, 1000, 1)
+    while remaining > 0 do
+        local current_step = math.min(step, remaining)
+        wait(current_step)
+        remaining = remaining - current_step
+        if condition and not condition() then
+            return false
+        end
+    end
+    return true
+end
+
+local function getLocalPlayerId()
+    if not playerPed then
+        return nil
+    end
+    local ok, exists = pcall(doesCharExist, playerPed)
+    if not ok or exists ~= true then
+        return nil
+    end
+    local found, player_id = sampGetPlayerIdByCharHandle(playerPed)
+    if found ~= true then
+        return nil
+    end
+    return tonumber(player_id)
+end
+
+>>>>>>> 304e2e6 (21)
 local function checkForUpdate(manual)
     if update_check_running then return end
     update_check_running = true
@@ -107,7 +247,7 @@ local function checkForUpdate(manual)
                             if latest ~= thisScript().version then
                                 update_available = true
                                 if manual then
-                                    sampAddChatMessage(string.format('[Информация] {FFFFFF}Обнаружено обновление {FF6347}%s{FFFFFF}. Начинаю обновление...', latest), 0x96FF00)
+                                    sampAddChatMessage(string.format('[Автосбор] {FFFFFF}Доступно обновление {FF6347}%s{FFFFFF}. Скачиваю обновление...', latest), 0x96FF00)
                                     lua_thread.create(function()
                                         wait(250)
                                         downloadUrlToFile(update_link, thisScript().path,
@@ -116,7 +256,7 @@ local function checkForUpdate(manual)
                                                     print(string.format('Загружено %d из %d.', p13, p23))
                                                 elseif status1 == dlstatus.STATUS_ENDDOWNLOADDATA then
                                                     print('Загрузка обновления завершена.')
-                                                    sampAddChatMessage('[Информация] {FFFFFF}Обновление завершено!', 0x96FF00)
+                                                    sampAddChatMessage('[Автосбор] {FFFFFF}Обновление установлено!', 0x96FF00)
                                                     lua_thread.create(function() wait(500) thisScript():reload() end)
                                                 end
                                             end
@@ -124,7 +264,7 @@ local function checkForUpdate(manual)
                                     end)
                                 else
                                     if auto_update and auto_update[0] then
-                                        sampAddChatMessage(string.format('[Информация] {FFFFFF}Обнаружено обновление {FF6347}%s{FFFFFF}. Автообновление...', latest), 0x96FF00)
+                                        sampAddChatMessage(string.format('[Автосбор] {FFFFFF}Доступно обновление {FF6347}%s{FFFFFF}. Обновляюсь...', latest), 0x96FF00)
                                         lua_thread.create(function()
                                             wait(250)
                                             downloadUrlToFile(update_link, thisScript().path,
@@ -133,7 +273,7 @@ local function checkForUpdate(manual)
                                                         print(string.format('Загружено %d из %d.', p13, p23))
                                                     elseif status1 == dlstatus.STATUS_ENDDOWNLOADDATA then
                                                         print('Загрузка обновления завершена.')
-                                                        sampAddChatMessage('[Информация] {FFFFFF}Обновление завершено!', 0x96FF00)
+                                                        sampAddChatMessage('[Автосбор] {FFFFFF}Обновление установлено!', 0x96FF00)
                                                         lua_thread.create(function() wait(500) thisScript():reload() end)
                                                     end
                                                 end
@@ -141,7 +281,7 @@ local function checkForUpdate(manual)
                                         end)
                                     else
                                         if not update_notified then
-                                            sampAddChatMessage('[Информация] {FFFFFF}Доступно обновление. Нажмите кнопку "Проверка обновления" для обновления.', 0x96FF00)
+                                            sampAddChatMessage('[Автосбор] {FFFFFF}Доступно обновление. Нажмите "Проверить обновление" для установки.', 0x96FF00)
                                             update_notified = true
                                         end
                                     end
@@ -149,20 +289,20 @@ local function checkForUpdate(manual)
                             else
                                 update_available = false
                                 if manual then
-                                    sampAddChatMessage('[Информация] {FFFFFF}У вас актуальная версия скрипта.', 0x96FF00)
+                                    sampAddChatMessage('[Автосбор] {FFFFFF}У вас последняя версия скрипта.', 0x96FF00)
                                 end
                             end
                         else
-                            sampAddChatMessage('[Информация] {FF6347}Ошибка проверки обновления. Свяжитесь с разработчиком.', 0x96FF00)
+                            sampAddChatMessage('[Автосбор] {FF6347}Ошибка проверки обновлений. Попробуйте позже.', 0x96FF00)
                         end
                     else
-                        sampAddChatMessage('[Информация] {FF6347}Не удалось прочитать файл обновления. Свяжитесь с разработчиком.', 0x96FF00)
+                        sampAddChatMessage('[Автосбор] {FF6347}Не удалось создать файл обновления. Попробуйте позже.', 0x96FF00)
                     end
                 else
-                    sampAddChatMessage('[Информация] {FF6347}Не удалось загрузить файл обновления. Свяжитесь с разработчиком.', 0x96FF00)
+                    sampAddChatMessage('[Автосбор] {FF6347}Не удалось скачать файл обновления. Попробуйте позже.', 0x96FF00)
                 end
             elseif status == dlstatus.STATUSEX_ABORTED then
-                sampAddChatMessage('[Информация] {FF6347}Загрузка обновления прервана.', 0x96FF00)
+                sampAddChatMessage('[Автосбор] {FF6347}Загрузка обновления отменена.', 0x96FF00)
             end
             update_check_running = false
         end)
@@ -240,12 +380,19 @@ local function startCycleWithCD()
             local sawnoff_local = (type(sawnoff) == 'table') and sawnoff or nil
             local alt_local = (type(alt) == 'table') and alt or nil
             
+<<<<<<< HEAD
             if not (sawnoff_local and sawnoff_local[5]) then
                 if isPayDayBlocked() then
                     local wait_time = getPayDayUnlockTime()
                     sampAddChatMessage(string.format('[Информация] {FFFFFF}Ожидание окончания {FF6347}PayDay{FFFFFF} перед сменой на обрез: {FF6347}%d сек.', wait_time), 0x96FF00)
                     wait(wait_time * 1000)
                 end
+=======
+            if not sawnoff_local[5] and isPayDayBlocked() then
+                local wait_time = getPayDayUnlockTime()
+                sampAddChatMessage(string.format('[Автосбор] {FFFFFF}Начался период {FF6347}PayDay{FFFFFF} ждём окончания: {FF6347}%d сек.', wait_time), 0x96FF00)
+                waitInSteps(wait_time * 1000, 1000, function() return work and getBoolValue(auto_cycle_cd, cfg.settings.auto_cycle_cd) end)
+>>>>>>> 304e2e6 (21)
             end
 
             if cef and cef[0] then
@@ -282,16 +429,36 @@ local function startCycleWithCD()
                 
                 wait(500)
                 
+<<<<<<< HEAD
                 local alt_slot = FindAltItem(inventory, alt_model_id and alt_model_id[0])
                 if alt_slot then
                     if alt_slot ~= 3 then
                         send_cef('inventory.moveItemForce|{"slot": ' .. alt_slot .. ', "type": 1, "amount": 1}')
+=======
+                -- Альт-предмет: ждём его появления в инвентаре, затем используем (слот 4)
+                local alt_target_slot = 4
+                local alt_slot, alt_data = waitForItemInInventory(alt_model_value, 15, 200)
+                if alt_slot then
+                    if alt_slot ~= alt_target_slot then
+                        send_cef('inventory.moveItemForce|{"slot": ' .. tostring(alt_slot) .. ', "type": 1, "amount": 1}')
+>>>>>>> 304e2e6 (21)
                         wait(333)
+                        alt_slot, alt_data = waitForItemInInventory(alt_model_value, 5, 200)
+                        if alt_slot and alt_slot ~= alt_target_slot then
+                            sampAddChatMessage('[Автосбор] {FF6347}Не удалось переместить альт в слот '..alt_target_slot..' [CEF]', 0x96FF00)
+                        end
                     end
+                    if alt_slot then
+                        send_cef('clickOnButton|{"type": 2,"slot": ' .. alt_target_slot .. ', "action": 1}')
+                        sampAddChatMessage('[Автосбор] {FFFFFF}Альт-предмет использован. [CEF]', 0x96FF00)
+                    end
+<<<<<<< HEAD
                     sampAddChatMessage('[Информация] {FFFFFF}Альт-предмет одет. [CEF]', 0x96FF00)
                     sampSendClickTextdraw(65535)
+=======
+>>>>>>> 304e2e6 (21)
                 else
-                    sampAddChatMessage('[Информация] {FF6347}Альт-предмет не найден. [CEF]', 0x96FF00)
+                    sampAddChatMessage('[Автосбор] {FF6347}Альт-предмет не найден. [CEF]', 0x96FF00)
                 end
                 
                 if open_inventory and not open_inventory[0] then
@@ -301,8 +468,13 @@ local function startCycleWithCD()
                 openInventoryAndWait()
                 wait(666)
                 
+<<<<<<< HEAD
                 if not (sawnoff_local and sawnoff_local.textdraw_id) then
                     sampAddChatMessage('[Информация] {FF6347}Не удалось найти иконку обреза (нет данных). Попытка позже.', 0x96FF00)
+=======
+                if not sawnoff_local.textdraw_id then
+                    sampAddChatMessage('[Автосбор] {FF6347}Не удалось найти текстдрав обреза (или инвентарь). Повторю позже.', 0x96FF00)
+>>>>>>> 304e2e6 (21)
                     wait(5000)
                     goto continue_loop
                 end
@@ -338,7 +510,7 @@ local function startCycleWithCD()
                         wait(500)
                         if sawnoff_local then sawnoff_local[5] = true end
                     else
-                        sampAddChatMessage('[Информация] {FF6347}Не удалось использовать обрез.', 0x96FF00)
+                        sampAddChatMessage('[Автосбор] {FF6347}Не удалось найти кнопку использования.', 0x96FF00)
                     end
 
                     wait(666)
@@ -349,25 +521,31 @@ local function startCycleWithCD()
                         if alt_local and alt_local[2] and sampTextdrawIsExists(alt_local[2]) then
                             safeClick(alt_local[2])
                             wait(500)
+<<<<<<< HEAD
                             sampAddChatMessage('[Информация] {FFFFFF}Альт-предмет одет.', 0x96FF00)
                             if sawnoff_local then sawnoff_local[5] = false end
+=======
+                            sampAddChatMessage('[Автосбор] {FFFFFF}Альт-предмет надет.', 0x96FF00)
+                            sawnoff_local[5] = false
+>>>>>>> 304e2e6 (21)
                         else
-                            sampAddChatMessage('[Информация] {FF6347}Кнопка PUT для альта не найдена.', 0x96FF00)
+                            sampAddChatMessage('[Автосбор] {FF6347}Текстдрава PUT для альта не найдена.', 0x96FF00)
                         end
                     else
-                        sampAddChatMessage('[Информация] {FF6347}Альт-предмет не найден.', 0x96FF00)
+                        sampAddChatMessage('[Автосбор] {FF6347}Альт-предмет не найден.', 0x96FF00)
                     end
                     
                     if open_inventory and not open_inventory[0] then
                         sampSendClickTextdraw(65535)
                     end
                 else
-                    sampAddChatMessage('[Информация] {FF6347}Не удалось найти иконку обреза. Попытка позже.', 0x96FF00)
+                    sampAddChatMessage('[Автосбор] {FF6347}Не удалось найти текстдрав обреза. Повторю позже.', 0x96FF00)
                 end
             end
             
             ::continue_loop::
             if delay_time then
+<<<<<<< HEAD
                 local wait_minutes = tonumber(delay_time) or 60
                 sampAddChatMessage(string.format('[Информация] {FFFFFF}Ожидание КД: {FFD700}%d {FFFFFF}минут.', wait_minutes), 0x96FF00)
                 
@@ -392,6 +570,15 @@ local function startCycleWithCD()
                     wait(math.min(check_interval, total_wait - elapsed))
                     elapsed = elapsed + check_interval
                 end
+=======
+                local wait_minutes = getCooldownMinutes(delay_time, 60)
+                sampAddChatMessage(string.format('[Автосбор] {FFFFFF}Кулдаун: {FFD700}%d {FFFFFF}минут.', wait_minutes), 0x96FF00)
+                waitInSteps(wait_minutes * 60000, 5000, function() return work and getBoolValue(auto_cycle_cd, cfg.settings.auto_cycle_cd) end)
+                delay_time = nil
+            else
+                sampAddChatMessage('[Автосбор] {FFFFFF}КД не определён, жду 60 минут.', 0x96FF00)
+                waitInSteps(60 * 60000, 5000, function() return work and getBoolValue(auto_cycle_cd, cfg.settings.auto_cycle_cd) end)
+>>>>>>> 304e2e6 (21)
             end
             
             if not work or not auto_cycle_cd or not auto_cycle_cd[0] then
@@ -404,16 +591,16 @@ end
 
 function se.onServerMessage(color, text)
     if work then
-        if text and type(text) == 'string' and text:find('Для использования этого аксессуара должно пройти ещё (.+) минут!') then
-            local minutes = text:match('Для использования этого аксессуара должно пройти ещё (.+) минут!')
+        if text and type(text) == 'string' and text:find('Вы использовали обрез и получили срок на (.+) минут!') then
+            local minutes = text:match('Вы использовали обрез и получили срок на (.+) минут!')
             if minutes then
                 delay_time = minutes
                 if sawnoff and type(sawnoff) == 'table' then sawnoff[5] = false end
                 first_start = true
             end
         end
-        if text and type(text) == 'string' and text:find('Воспользуйте мастерской по ремонту одежды для восстановления состояния аксессуара!') then
-            sampAddChatMessage('[Информация] {FFFFFF}Аксессуар "Обрез" {FF6347}Сломался! {FFFFFF}Скрипт {FF6347}выключен.', 0x96FF00)
+        if text and type(text) == 'string' and text:find('Полицейский заметил вас за использованием запрещённого предмета!') then
+            sampAddChatMessage('[Автосбор] {FFFFFF}Полицейский {FF6347}заметил! {FFFFFF}Работа {FF6347}остановлена.', 0x96FF00)
             work = false
         end
     end
@@ -429,14 +616,21 @@ function main()
     
     sampRegisterChatCommand('sawnoff', function() if main_window then main_window[0] = not main_window[0] end end)
     
+<<<<<<< HEAD
     if debug_mode and debug_mode[0] then
         if cef and cef[0] then
             sampAddChatMessage('[Отладка] {FFFFFF}Режим CEF: {42B02C}ВКЛЮЧЕН', 0x96FF00)
             sampAddChatMessage('[Отладка] {FFFFFF}Будут показываться ID предметов из CEF пакетов', 0x96FF00)
+=======
+    if getBoolValue(debug_mode, cfg.settings.dbg) then
+        if getBoolValue(cef, cfg.settings.cef) then
+            sampAddChatMessage('[Отладка] {FFFFFF}Режим CEF: {42B02C}Включен', 0x96FF00)
+            sampAddChatMessage('[Отладка] {FFFFFF}Поиск альт предмета ID будет по CEF событиям', 0x96FF00)
+>>>>>>> 304e2e6 (21)
         else
-            sampAddChatMessage('[Отладка] {FFFFFF}Режим CEF: {FF6347}ВЫКЛЮЧЕН', 0x96FF00)
-            sampAddChatMessage('[Отладка] {FFFFFF}Будут показываться MODEL ID из текстдравов', 0x96FF00)
-            sampAddChatMessage('[Отладка] {FFFFFF}Откройте инвентарь (/invent) чтобы увидеть модели', 0x96FF00)
+            sampAddChatMessage('[Отладка] {FFFFFF}Режим CEF: {FF6347}Отключен', 0x96FF00)
+            sampAddChatMessage('[Отладка] {FFFFFF}Поиск альт предмета по MODEL ID текстдрав', 0x96FF00)
+            sampAddChatMessage('[Отладка] {FFFFFF}Откройте инвентарь (/invent) после запуска скрипта', 0x96FF00)
         end
     end
     
@@ -459,12 +653,17 @@ function main()
                         if targetId and targetId > 0 then findItemById(inventory, targetId) end
                         if alt_model_id and alt_model_id[0] and alt_model_id[0] > 0 then FindAltItem(inventory, alt_model_id[0]) end
                         sampSendClickTextdraw(65535)
+<<<<<<< HEAD
                         sampAddChatMessage('[Информация] {FFFFFF}Сейчас откроется инвентарь.', 0x96FF00)
                     elseif not first_start and open_inventory and not open_inventory[0] then
+=======
+                        sampAddChatMessage('[Автосбор] {FFFFFF}Начинаю поиск инвентаря.', 0x96FF00)
+                    elseif not first_start and not keep_inventory_open then
+>>>>>>> 304e2e6 (21)
                         if targetId and targetId > 0 then findItemById(inventory, targetId) end
                         if alt_model_id and alt_model_id[0] and alt_model_id[0] > 0 then FindAltItem(inventory, alt_model_id[0]) end
                         sampSendClickTextdraw(65535)
-                        sampAddChatMessage('[Информация] {FFFFFF}Сейчас откроется инвентарь.', 0x96FF00)
+                        sampAddChatMessage('[Автосбор] {FFFFFF}Начинаю поиск инвентаря.', 0x96FF00)
                     end
                     wait(666)
                     inventory_fix = true
@@ -539,7 +738,7 @@ function main()
                                 wait(500)
                             until sawnoff and sawnoff[5] == false or not work
                         else
-                            sampAddChatMessage('[Информация] {FF6347}Не удалось найти текстдрав обреза. Попробую позже.', 0x96FF00)
+                            sampAddChatMessage('[Автосбор] {FF6347}Не удалось найти текстдрав обреза. Повторю позже.', 0x96FF00)
                         end
                         wait(500)
                     end
@@ -588,8 +787,13 @@ function acef.onArizonaDisplay(packet)
                 
                 if debug_mode and debug_mode[0] and cef and cef[0] then
                     sampAddChatMessage(
+<<<<<<< HEAD
                         string.format("[Информация] {FF6347}[CEF] {FFFFFF}Слот {FFD700}%d {FFFFFF}| Модель: {42B02C}%d", 
                             item.slot, item.item), 
+=======
+                        string.format("[Автосбор] {FF6347}[CEF] {FFFFFF}Слот {FFD700}%d {FFFFFF}| ID: {42B02C}%d", 
+                            slot, item_id), 
+>>>>>>> 304e2e6 (21)
                         0x96FF00
                     )
                 end
@@ -618,6 +822,7 @@ function acef.onArizonaDisplay(packet)
 end
 
 function se.onShowTextDraw(id, data)
+<<<<<<< HEAD
     if not id or not data then return end
     if not data or type(data) ~= 'table' then return end
     
@@ -627,6 +832,30 @@ function se.onShowTextDraw(id, data)
                 string.format("[Информация] {FF6347}[TD] {FFFFFF}Модель: {42B02C}%d", data.modelId), 
                 0x96FF00
             )
+=======
+    local textdraw_id = tonumber(id)
+    if not textdraw_id or type(data) ~= 'table' then return end
+    local sawnoff_state, alt_state = ensureStateTables()
+    local model_id = tonumber(data.modelId)
+    local background_color = tonumber(data.backgroundColor)
+    local rotation = type(data.rotation) == 'table' and data.rotation or nil
+    local text = type(data.text) == 'string' and data.text or ''
+    local style = tonumber(data.style)
+    local alt_model_value = getIntValue(alt_model_id, cfg.settings.alt_model_id, 1, 999999)
+
+    if getBoolValue(debug_mode, cfg.settings.dbg) and not getBoolValue(cef, cfg.settings.cef) and model_id and model_id ~= 0 then
+        sampAddChatMessage(
+            string.format('[Автосбор] {FF6347}[TD] {FFFFFF}Model ID: {42B02C}%d', model_id),
+            0x96FF00
+        )
+    end
+
+    if text == 'INVENTORY' or (text == 'ИНВЕНТАРЬ' and style == 2) then
+        inventory_id = textdraw_id
+        if not cfg.settings.connected then
+            cfg.settings.connected = true
+            safeSaveConfig()
+>>>>>>> 304e2e6 (21)
         end
     end
     
@@ -658,6 +887,7 @@ function se.onShowTextDraw(id, data)
             alt[1] = id
         end
     end
+<<<<<<< HEAD
     
     if text == 'PUT' or text == 'HAѓEЏ’' then
         if sawnoff and type(sawnoff) == 'table' then
@@ -678,6 +908,20 @@ function se.onShowTextDraw(id, data)
             alt[4] = true
             alt[3] = id + 1
         end
+=======
+
+    if text == 'PUT' or text == 'ПОЛОЖИТЬ' then
+        sawnoff_state[4] = false
+        sawnoff_state.textdraw_put_id = textdraw_id + 1
+        alt_state[4] = false
+        alt_state[2] = textdraw_id + 1
+    end
+    if text == 'USE' or text == 'ИСПОЛЬЗОВАТЬ' then
+        sawnoff_state[4] = true
+        sawnoff_state.textdraw_use_id = textdraw_id + 1
+        alt_state[4] = true
+        alt_state[3] = textdraw_id + 1
+>>>>>>> 304e2e6 (21)
     end
 end
 
@@ -745,16 +989,16 @@ imgui.OnFrame(function() return main_window and main_window[0] and not isPauseMe
     imgui.PopStyleColor(3)
     imgui.PopFont()
     imgui.PushFont(Font[24])
-    imgui.CenterText('патронов c аксессуара «Обрез»')
+    imgui.CenterText('Управление с обрезом')
     imgui.PopFont()
     imgui.PushFont(Font[18])
     imgui.CenterText('Remake by SAKUTA')
     imgui.PopFont()
     imgui.PushFont(Font[18])
-    imgui.CenterText('Версия скрипта: ' .. thisScript().version)
+    imgui.CenterText('Текущая версия: ' .. thisScript().version)
     imgui.Separator()
     
-    imgui.Checkbox(u8' Запускать скрипт при подключении к серверу', auto_start)
+    imgui.Checkbox(u8'  Включить автостарт при входе в игру', auto_start)
     if auto_start and auto_start[0] then 
         if cfg.settings.auto_start ~= auto_start[0] then
             cfg.settings.auto_start = true
@@ -767,7 +1011,7 @@ imgui.OnFrame(function() return main_window and main_window[0] and not isPauseMe
         end
     end
     
-    imgui.Checkbox(u8' Рандомная задержка: от', random_delay)
+    imgui.Checkbox(u8'  Случайная задержка: вкл', random_delay)
     if random_delay and random_delay[0] then
         if cfg.settings.random_delay ~= random_delay[0] then
             cfg.settings.random_delay = true
@@ -780,7 +1024,7 @@ imgui.OnFrame(function() return main_window and main_window[0] and not isPauseMe
         end
     end
     imgui.PushItemWidth(30)
-    imgui.InputInt(u8' мин.  до##random_delay_time_min', random_delay_time_min, 0, 0, imgui.SameLine())
+    imgui.InputInt(u8'  Мин.  мин##random_delay_time_min', random_delay_time_min, 0, 0, imgui.SameLine())
     if random_delay_time_min and random_delay_time_min[0] then
         if random_delay_time_min[0] < 0 then random_delay_time_min[0] = 0 end
         if random_delay_time_max and random_delay_time_max[0] and random_delay_time_min[0] > random_delay_time_max[0] then random_delay_time_min[0] = random_delay_time_max[0] end
@@ -789,7 +1033,7 @@ imgui.OnFrame(function() return main_window and main_window[0] and not isPauseMe
             inicfg.save(cfg, 'sawnoff_auto_collector.ini')
         end
     end
-    imgui.InputInt(u8' мин.##random_delay_time_max', random_delay_time_max, 0, 0, imgui.SameLine())
+    imgui.InputInt(u8'  Макс.##random_delay_time_max', random_delay_time_max, 0, 0, imgui.SameLine())
     if random_delay_time_max and random_delay_time_max[0] then
         if random_delay_time_max[0] > 99 then random_delay_time_max[0] = 99 end
         if random_delay_time_min and random_delay_time_min[0] and random_delay_time_max[0] < random_delay_time_min[0] then random_delay_time_max[0] = random_delay_time_min[0] end
@@ -804,7 +1048,7 @@ imgui.OnFrame(function() return main_window and main_window[0] and not isPauseMe
     local swap_old = auto_swap and auto_swap[0]
     local cycle_old = auto_cycle_cd and auto_cycle_cd[0]
     
-    imgui.Checkbox(u8' Авто смена на предмет (вкл/выкл)', auto_swap)
+    imgui.Checkbox(u8' Смена оружия на альт (вкл/выкл)', auto_swap)
     if auto_swap and auto_swap[0] ~= swap_old then
         if auto_swap[0] then
             if auto_cycle_cd then auto_cycle_cd[0] = false end
@@ -817,7 +1061,7 @@ imgui.OnFrame(function() return main_window and main_window[0] and not isPauseMe
         if work and auto_swap and auto_swap[0] then startAutoSwapThread() end
     end
     
-    imgui.Checkbox(u8' Авто смена на обрез после КД', auto_cycle_cd)
+    imgui.Checkbox(u8' Смена оружия на обрез по кулдауну', auto_cycle_cd)
     if auto_cycle_cd and auto_cycle_cd[0] ~= cycle_old then
         if auto_cycle_cd[0] then
             if auto_swap then auto_swap[0] = false end
@@ -846,7 +1090,7 @@ imgui.OnFrame(function() return main_window and main_window[0] and not isPauseMe
     end
 
     imgui.SameLine()
-    imgui.Checkbox(u8' CEF Инвентарь', cef)
+    imgui.Checkbox(u8' CEF Режим', cef)
     if cef and cef[0] then
         if cfg.settings.cef ~= cef[0] then cfg.settings.cef = true; inicfg.save(cfg, 'sawnoff_auto_collector.ini') end
     else
@@ -861,11 +1105,11 @@ imgui.OnFrame(function() return main_window and main_window[0] and not isPauseMe
         if cfg.settings.dbg ~= debug_mode[0] then cfg.settings.dbg = false; inicfg.save(cfg, 'sawnoff_auto_collector.ini') end
     end
     
-    imgui.InputInt(u8' ID модели предмета', alt_model_id, 0, 0)
+    imgui.InputInt(u8' ID альт предмета', alt_model_id, 0, 0)
     if alt_model_id and alt_model_id[0] and cfg.settings.alt_model_id ~= alt_model_id[0] then cfg.settings.alt_model_id = alt_model_id[0]; inicfg.save(cfg, 'sawnoff_auto_collector.ini') end
     imgui.Separator()
     
-    imgui.Checkbox(u8' Не закрывать инвентарь после первого открытия', open_inventory)
+    imgui.Checkbox(u8' Не закрывать инвентарь после работы', open_inventory)
     if open_inventory and open_inventory[0] then
         if cfg.settings.open_inventory ~= open_inventory[0] then
             cfg.settings.open_inventory = true
@@ -878,10 +1122,10 @@ imgui.OnFrame(function() return main_window and main_window[0] and not isPauseMe
         end
     end
     
-    imgui.Checkbox(u8' Запустить скрипт через:', timer)
+    imgui.Checkbox(u8' Задержка перед стартом:', timer)
     imgui.PushItemWidth(30)
     imgui.SameLine()
-    imgui.InputInt(u8' мин.##timer_time', timer_time, 0, 0)
+    imgui.InputInt(u8'  мин.##timer_time', timer_time, 0, 0)
     if timer_time and timer_time[0] then
         if timer_time[0] < 0 then timer_time[0] = 0 end
         timer[0] = (timer_time[0] > 0 and timer_time[0] <= 99)
@@ -899,7 +1143,7 @@ imgui.OnFrame(function() return main_window and main_window[0] and not isPauseMe
         imgui.PushStyleColor(imgui.Col.ButtonHovered, imgui.ImVec4(0.00, 0.66, 0.00, 1.00))
         imgui.PushStyleColor(imgui.Col.ButtonActive, imgui.ImVec4(0.00, 0.50, 0.00, 1.00))
     end
-    if imgui.Button(work and u8'Выключить' or u8'Включить', imgui.ImVec2(170, 30)) then 
+    if imgui.Button(work and u8'Остановить' or u8'Запустить', imgui.ImVec2(170, 30)) then 
         if not work then
             if cfg.settings.connected and sampGetGamestate() == 3 and sampIsLocalPlayerSpawned() then
                 work = true
@@ -907,24 +1151,24 @@ imgui.OnFrame(function() return main_window and main_window[0] and not isPauseMe
                 if auto_swap and auto_swap[0] then startAutoSwapThread() end
                 if auto_cycle_cd and auto_cycle_cd[0] and not cycle_thread_running then startCycleWithCD() end
                 if timer and timer[0] and timer_time and timer_time[0] and timer_time[0] ~= 0 and timer_time[0] > 0 then
-                    sampAddChatMessage('[Информация] {FFFFFF}Автоматический сбор обреза: {42B02C}включен{FFFFFF}.', 0x96FF00)
-                    sampAddChatMessage('[Информация] {FFFFFF}Запуск через {FFD700}'..timer_time[0]..' {FFFFFF}мин.', 0x96FF00)
+                    sampAddChatMessage('[Автосбор] {FFFFFF}Автоматический сбор: {42B02C}запущен{FFFFFF}.', 0x96FF00)
+                    sampAddChatMessage('[Автосбор] {FFFFFF}Задержка {FFD700}'..timer_time[0]..' {FFFFFF}мин.', 0x96FF00)
                 else
-                    sampAddChatMessage('[Информация] {FFFFFF}Автоматический сбор обреза: {42B02C}включен{FFFFFF}.', 0x96FF00)
+                    sampAddChatMessage('[Автосбор] {FFFFFF}Автоматический сбор: {42B02C}запущен{FFFFFF}.', 0x96FF00)
                 end
             else
-                sampAddChatMessage('[Информация] {FFFFFF}Вы не подключены к серверу.', 0x96FF00)
+                sampAddChatMessage('[Автосбор] {FFFFFF}Вы не подключены к игре.', 0x96FF00)
             end
         else
             sampSendClickTextdraw(65535)
             work = false
-            sampAddChatMessage('[Информация] {FFFFFF}Автоматический сбор обреза: {FF6347}выключен{FFFFFF}.', 0x96FF00)
+            sampAddChatMessage('[Автосбор] {FFFFFF}Автоматический сбор: {FF6347}остановлен{FFFFFF}.', 0x96FF00)
         end
     end
     imgui.PopStyleColor(3)
     
     imgui.SameLine()
-    if imgui.Button(u8'Проверка обновления', imgui.ImVec2(170, 30)) then
+    if imgui.Button(u8'Проверить обновление', imgui.ImVec2(170, 30)) then
         checkForUpdate(true)
     end
     imgui.SameLine()
@@ -961,8 +1205,16 @@ function swapToAlt(scheduleReturn)
                 send_cef('inventory.moveItemForce|{"slot": ' .. alt_slot .. ', "type": 1, "amount": 1}')
                 wait(333)
             end
+<<<<<<< HEAD
             sampAddChatMessage('[Информация] {FFFFFF}Альт-предмет (ID '..alt_model_id[0]..') одет. [CEF]', 0x96FF00)
             sampSendClickTextdraw(65535)
+=======
+            send_cef('clickOnButton|{"type": 2,"slot": 3, "action": 1}')
+            sampAddChatMessage('[Автосбор] {FFFFFF}Альт-предмет (ID '..alt_model_value..') надет. [CEF]', 0x96FF00)
+            if not keep_inventory_open then
+                sampSendClickTextdraw(65535)
+            end
+>>>>>>> 304e2e6 (21)
             wait(333)
             if scheduleReturn and auto_swap and auto_swap[0] then
                 local dur = 5
@@ -972,9 +1224,15 @@ function swapToAlt(scheduleReturn)
                 end)
             end
         else
+<<<<<<< HEAD
             sampAddChatMessage('[Информация] {FFFFFF}Альтернативный предмет с ID: {FFD700}'..alt_model_id[0]..' {FF6347}не найден{FFFFFF}. [CEF]', 0x96FF00)
             sampAddChatMessage('[Информация] {FFFFFF}Auto Swap {FF6347}отключен{FFFFFF}. Обрез будет собираться без свапа. [CEF]', 0x96FF00)
             if auto_swap then auto_swap[0] = false end
+=======
+            sampAddChatMessage('[Автосбор] {FFFFFF}Предмета с ID: {FFD700}'..alt_model_value..' {FF6347}нет в инвентаре{FFFFFF}. [CEF]', 0x96FF00)
+            sampAddChatMessage('[Автосбор] {FFFFFF}Auto Swap {FF6347}отключен{FFFFFF}. При появлении предмета включите снова. [CEF]', 0x96FF00)
+            setBoolValue(auto_swap, false)
+>>>>>>> 304e2e6 (21)
             cfg.settings.auto_swap = false
             inicfg.save(cfg, 'sawnoff_auto_collector.ini')
         end
@@ -1003,17 +1261,23 @@ function swapToAlt(scheduleReturn)
                 if alt[2] then safeClick(alt[2]) end
             end
             wait(500)
+<<<<<<< HEAD
             if open_inventory and not open_inventory[0] then sampSendClickTextdraw(65535) end
             sampAddChatMessage('[Информация] {FFFFFF}Сменен предмет на ID: {FFD700}'..alt_model_id[0], 0x96FF00)
             if scheduleReturn and auto_swap and auto_swap[0] then
                 local dur = 5
+=======
+            if not keep_inventory_open then sampSendClickTextdraw(65535) end
+            sampAddChatMessage('[Автосбор] {FFFFFF}Надет предмет с ID: {FFD700}'..alt_model_value, 0x96FF00)
+            if scheduleReturn and getBoolValue(auto_swap, cfg.settings.auto_swap) then
+>>>>>>> 304e2e6 (21)
                 lua_thread.create(function()
                     wait(dur * 60000)
                     swapToSawnoff()
                 end)
             end
         else
-            sampAddChatMessage('[Информация] {FFFFFF}Альтернативный предмет не найден в инвентаре.', 0x96FF00)
+            sampAddChatMessage('[Автосбор] {FFFFFF}Предмета с таким ID нет в инвентаре.', 0x96FF00)
         end
     end
 end
@@ -1027,17 +1291,27 @@ function swapToSawnoff()
             if sawnoff and type(sawnoff) == 'table' then sawnoff[5] = true end
             if sawnoff_slot == 3 then
                 send_cef('clickOnButton|{"type": 2,"slot": 3, "action": 1}')
+<<<<<<< HEAD
                 sampAddChatMessage('[Информация] {FFFFFF}Вернулся предмет Sawnoff [CEF].', 0x96FF00)
                 sampSendClickTextdraw(65535)
+=======
+                sampAddChatMessage('[Автосбор] {FFFFFF}Надет обрез Sawnoff [CEF].', 0x96FF00)
+>>>>>>> 304e2e6 (21)
             else
                 send_cef('inventory.moveItemForce|{"slot": ' .. sawnoff_slot .. ', "type": 1, "amount": 1}')
                 wait(333)
                 send_cef('clickOnButton|{"type": 2,"slot": 3, "action": 1}')
+<<<<<<< HEAD
+=======
+                sampAddChatMessage('[Автосбор] {FFFFFF}Надет обрез Sawnoff [CEF].', 0x96FF00)
+            end
+            if not keep_inventory_open then
+>>>>>>> 304e2e6 (21)
                 sampSendClickTextdraw(65535)
                 sampAddChatMessage('[Информация] {FFFFFF}Вернулся предмет Sawnoff [CEF].', 0x96FF00)
             end
         else
-            sampAddChatMessage('[Информация] {FFFFFF}Sawnoff не найден в инвентаре. [CEF]', 0x96FF00)
+            sampAddChatMessage('[Автосбор] {FFFFFF}Sawnoff не найден в инвентаре. [CEF]', 0x96FF00)
         end
     else
         openInventoryAndWait()
@@ -1064,10 +1338,15 @@ function swapToSawnoff()
                 if sawnoff.textdraw_put_id then safeClick(sawnoff.textdraw_put_id) end
             end
             wait(500)
+<<<<<<< HEAD
             if open_inventory and not open_inventory[0] then sampSendClickTextdraw(65535) end
             sampAddChatMessage('[Информация] {FFFFFF}Вернулся предмет Sawnoff .', 0x96FF00)
+=======
+            if not keep_inventory_open then sampSendClickTextdraw(65535) end
+            sampAddChatMessage('[Автосбор] {FFFFFF}Надет обрез Sawnoff.', 0x96FF00)
+>>>>>>> 304e2e6 (21)
         else
-            sampAddChatMessage('[Информация] {FFFFFF}Sawnoff не найден в инвентаре.', 0x96FF00)
+            sampAddChatMessage('[Автосбор] {FFFFFF}Sawnoff не найден в инвентаре.', 0x96FF00)
         end
     end
 end
@@ -1120,14 +1399,24 @@ textdrawExists = function(id)
 end
 
 function se.onShowDialog(dialogId, style, title, button1, button2, text)
+<<<<<<< HEAD
     if not title then return end
     if inventory_fix and title:find('Игровое меню') then
+=======
+    if type(title) ~= 'string' then return end
+    if inventory_fix and title:find('Ваш инвентарь', 1, true) then
+>>>>>>> 304e2e6 (21)
         sampSendDialogResponse(dialogId, 0, nil, nil)
         inventory_fix = false
         return false
     end
+<<<<<<< HEAD
     if title:find('Информация об аренде') then
         sampAddChatMessage('[Информация] {FFFFFF}Аксессуар "Обрез" находиться в {FF6347}Аренде! {FFFFFF}Скрипт {FF6347}выключен.', 0x96FF00)
+=======
+    if title:find('Информация от полиции', 1, true) then
+        sampAddChatMessage('[Автосбор] {FFFFFF}Полицейский {FF6347}заметил! {FFFFFF}Работа {FF6347}остановлена.', 0x96FF00)
+>>>>>>> 304e2e6 (21)
         work = false
     end
 end
@@ -1160,6 +1449,7 @@ function onReceivePacket(id)
         if auto_start and auto_start[0] then
             lua_thread.create(function() 
                 repeat wait(0) until sampIsLocalPlayerSpawned() and sampGetGamestate() == 3
+<<<<<<< HEAD
                 if cfg.settings.connected then
                     if not work then
                         work = true
@@ -1167,6 +1457,13 @@ function onReceivePacket(id)
                         if auto_swap and auto_swap[0] then startAutoSwapThread() end
                         if auto_cycle_cd and auto_cycle_cd[0] and not cycle_thread_running then startCycleWithCD() end
                     end
+=======
+                if cfg.settings.connected and not work then
+                    work = true
+                    sampAddChatMessage('[Автосбор] {FFFFFF}Автоматический сбор: {42B02C}запущен{FFFFFF}.', 0x96FF00)
+                    if getBoolValue(auto_swap, cfg.settings.auto_swap) then startAutoSwapThread() end
+                    if getBoolValue(auto_cycle_cd, cfg.settings.auto_cycle_cd) and not cycle_thread_running then startCycleWithCD() end
+>>>>>>> 304e2e6 (21)
                 end
             end)
         end
