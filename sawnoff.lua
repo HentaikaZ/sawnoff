@@ -603,6 +603,89 @@ imgui.OnFrame(function() return main_window and main_window[0] and not isPauseMe
 	imgui.End()
 end)
 
+function startAutoSwapThread()
+	if swap_thread_running then return end
+	if not auto_swap or not auto_swap[0] then return end
+	swap_thread_running = true
+	lua_thread.create(function()
+		while work and auto_swap and auto_swap[0] do
+			local t = os.date('*t')
+			local secs_now = t.min * 60 + t.sec
+			local target1 = 28 * 60
+			local target2 = 58 * 60
+			local wait_secs
+			local diff1 = target1 - secs_now
+			if diff1 <= 0 then diff1 = diff1 + 3600 end
+			local diff2 = target2 - secs_now
+			if diff2 <= 0 then diff2 = diff2 + 3600 end
+			if diff1 <= diff2 then wait_secs = diff1 else wait_secs = diff2 end
+			wait(wait_secs * 1000)
+			if not work or not auto_swap or not auto_swap[0] then break end
+			swapToAlt(false)
+			local dur = 5
+			wait(dur * 60000)
+			if not work then break end
+			swapToSawnoff()
+		end
+		swap_thread_running = false
+	end)
+end
+
+function swapToSawnoff()
+    sampSendChat('/invent')
+    wait(333)
+    local sawnoff_slot = findItemById(inventory, sawnoffId[0])
+    if sawnoff_slot then
+        if sawnoff then sawnoff[5] = true end
+        if sawnoff_slot == 3 then
+            send_cef('clickOnButton|{"type": 2,"slot": 3, "action": 1}')
+            sampAddChatMessage('[Информация] {FFFFFF}Вернулся предмет Sawnoff.', 0x96FF00)
+            send_cef('inventoryClose')
+        else
+            send_cef('inventory.moveItemForce|{"slot": ' .. sawnoff_slot .. ', "type": 1, "amount": 1}')
+            send_cef('clickOnButton|{"type": 2,"slot": 3, "action": 1}')
+            send_cef('inventoryClose')
+            sampAddChatMessage('[Информация] {FFFFFF}Вернулся предмет Sawnoff.', 0x96FF00)
+        end
+    else
+        sampAddChatMessage('[Информация] {FFFFFF}Sawnoff не найден в инвентаре.', 0x96FF00)
+    end
+end
+
+function swapToAlt(scheduleReturn)
+		if scheduleReturn == nil then scheduleReturn = true end
+		if alt_model_id == nil then alt_model_id = imgui.new.int(cfg.settings.alt_model_id) end
+		if alt_model_id[0] == nil then alt_model_id[0] = cfg.settings.alt_model_id end
+		cfg.settings.alt_model_id = alt_model_id[0]
+		inicfg.save(cfg, 'sawnoff.ini')
+
+		sampSendChat('/invent')
+			wait(333)
+			local alt_slot = FindAltItem(inventory, alt_model_id[0])
+			if alt_slot then
+				if alt_slot ~= 3 then
+					send_cef('inventory.moveItemForce|{"slot": ' .. alt_slot .. ', "type": 1, "amount": 1}')
+				end
+				sampAddChatMessage('[Информация] {FFFFFF}Альт-предмет (ID '..alt_model_id[0]..') одет.', 0x96FF00)
+				send_cef('inventoryClose')
+				if scheduleReturn and auto_swap and auto_swap[0] then
+					local dur = 5
+					lua_thread.create(function()
+						wait(dur * 60000)
+						swapToSawnoff()
+					end)
+				end
+			else
+				sampAddChatMessage('[Информация] {FFFFFF}Альтернативный предмет с ID: {FFD700}'..alt_model_id[0]..' {FF6347}не найден{FFFFFF}.', 0x96FF00)
+				sampAddChatMessage('[Информация] {FFFFFF}Auto Swap {FF6347}отключен{FFFFFF}. Обрез будет собираться без свапа.', 0x96FF00)
+				if auto_swap then auto_swap[0] = false end
+				cfg.settings.auto_swap = false
+				inicfg.save(cfg, 'sawnoff.ini')
+			end
+		end
+	end
+end
+
 function se.onShowDialog(dialogId, style, title, button1, button2, text)
     if not title then return end
     if inventory_fix and title:find('Игровое меню') then
