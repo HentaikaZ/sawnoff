@@ -406,6 +406,7 @@ function main()
                     if sawnoff_slot ~= nil then
                         if sawnoff_slot ~= 3 then
                             repeat
+                                sampSendChat('/invent')
                                 wait(333)
                                 sawnoff_slot = findItemById(inventory, sawnoffId[0])
                             until sawnoff_slot or not work
