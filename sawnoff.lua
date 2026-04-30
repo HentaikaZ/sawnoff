@@ -621,6 +621,7 @@ function se.onServerMessage(color, text)
 	if work and sawnoff and sawnoff[5] then
 		if text:find('Для использования этого аксессуара должно пройти ещё (.+) минут!') then
 			delay_time = text:match('Для использования этого аксессуара должно пройти ещё (.+) минут!')
+            sampSendChatmessage('[Информация] {FFFFFF}Обрез на перезарядке! {FFFFFF}Следующий сбор через: {FFD700}'..delay_time..' {FFFFFF}мин.', 0x96FF00)
 			if sawnoff then sawnoff[5] = false end
 			first_start = true
 		end
