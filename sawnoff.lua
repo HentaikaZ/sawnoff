@@ -227,8 +227,8 @@ function acef.onArizonaDisplay(packet)
             FindAltItem(inventory, alt_model_id[0])
         end
         
-        if sawnoffId and sawnoffId > 0 then
-            findItemById(inventory, sawnoffId)
+        if sawnoffId and sawnoffId[0] and sawnoffId[0] > 0 then
+            findItemById(inventory, sawnoffId[0])
         end
     end
 end
@@ -399,12 +399,12 @@ function main()
                 work = false
             else
                 if first_start then
-                    if sawnoffId and sawnoffId > 0 then findItemById(inventory, sawnoffId) end
+                    if sawnoffId and sawnoffId[0] and sawnoffId[0] > 0 then findItemById(inventory, sawnoffId[0]) end
                     if alt_model_id and alt_model_id[0] and alt_model_id[0] > 0 then FindAltItem(inventory, alt_model_id[0]) end
                     sampSendClickTextdraw(65535)
                     sampAddChatMessage('[Информация] {FFFFFF}Сейчас откроется инвентарь.', 0x96FF00)
                 elseif not first_start then
-                    if sawnoffId and sawnoffId > 0 then findItemById(inventory, sawnoffId) end
+                    if sawnoffId and sawnoffId[0] and sawnoffId[0] > 0 then findItemById(inventory, sawnoffId[0]) end
                     if alt_model_id and alt_model_id[0] and alt_model_id[0] > 0 then FindAltItem(inventory, alt_model_id[0]) end
                     sampSendClickTextdraw(65535)
                     sampAddChatMessage('[Информация] {FFFFFF}Сейчас откроется инвентарь.', 0x96FF00)
@@ -413,13 +413,13 @@ function main()
                     wait(1000)
                 else
                     wait(333)
-                    local sawnoff_slot = findItemById(inventory, sawnoffId)
+                    local sawnoff_slot = findItemById(inventory, sawnoffId[0])
                     if sawnoff_slot ~= nil then
                         if sawnoff_slot ~= 3 then
                             repeat
                                 sampSendChat('/invent')
                                 wait(333)
-                                sawnoff_slot = findItemById(inventory, sawnoffId)
+                                sawnoff_slot = findItemById(inventory, sawnoffId[0])
                             until sawnoff_slot or not work
                         end
                         if sawnoff_slot == 3 then
