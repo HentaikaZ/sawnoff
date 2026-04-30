@@ -328,10 +328,7 @@ local function startCycleWithCD()
             else
                 sampAddChatMessage('[Информация] {FF6347}Альт-предмет не найден. [CEF]', 0x96FF00)
             end
-        else
-            
-        
-        if delay_time then
+            if delay_time then
             local wait_minutes = tonumber(delay_time) or 60
             sampAddChatMessage(string.format('[Информация] {FFFFFF}Ожидание КД: {FFD700}%d {FFFFFF}минут.', wait_minutes), 0x96FF00)
             
