@@ -375,6 +375,7 @@ local function startCycleWithCD()
     end
     cycle_thread_running = false
 end)
+end
 
 
 -- основной код
