@@ -284,14 +284,13 @@ local function startCycleWithCD()
                 sampAddChatMessage(string.format('[Информация] {FFFFFF}Смена на обрез отменена из-за приближения {FF6347}PayDay!{FFFFFF} Подождите {FF6347}%d сек.', wait_time), 0x96FF00)
                 wait(wait_time * 1000)
             end
-            sampSendClickTextdraw(65535)
+            sampSendChat('/invent')
             wait(333)
             
             local sawnoff_slot = findItemById(inventory, sawnoffId[0])
             if sawnoff_slot ~= nil then
                 if sawnoff_slot ~= 3 then
                     repeat
-                        sampSendChat('/invent')
                         wait(333)
                         sawnoff_slot = findItemById(inventory, sawnoffId[0])
                     until sawnoff_slot or not work
@@ -407,7 +406,6 @@ function main()
                     if sawnoff_slot ~= nil then
                         if sawnoff_slot ~= 3 then
                             repeat
-                                sampSendChat('/invent')
                                 wait(333)
                                 sawnoff_slot = findItemById(inventory, sawnoffId[0])
                             until sawnoff_slot or not work
@@ -436,13 +434,13 @@ function main()
                     else
                         sampAddChatMessage('[Информация] {FFFFFF}«Обрез (активный аксессуар)» {FF6347}не найден{FFFFFF}.', 0x96FF00)
                         sampAddChatMessage('[Информация] {FFFFFF}Автоматический сбор обреза: {FF6347}выключен{FFFFFF}.', 0x96FF00)
-                        sampSendChat('/invent')
+                        send_cef('inventoryClose')
                         showCursor(false)
                         thisScript():reload()
                     end
                 wait(500)
             end
-            sampSendChat('/invent')
+            send_cef('inventoryClose')
             end
             if delay_time ~= nil then
                 wait((tonumber(delay_time) or 60) * 60000 + 60000)
@@ -582,7 +580,7 @@ imgui.OnFrame(function() return main_window and main_window[0] and not isPauseMe
 				sampAddChatMessage('[Информация] {FFFFFF}Вы не подключены к серверу.', 0x96FF00)
 			end
 		else
-			sampSendClickTextdraw(65535)
+			send_cef('inventoryClose')
 			thisScript():reload()
 			sampAddChatMessage('[Информация] {FFFFFF}Автоматический сбор обреза: {FF6347}выключен{FFFFFF}.', 0x96FF00)
 		end
