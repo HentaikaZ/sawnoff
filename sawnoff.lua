@@ -375,9 +375,9 @@ local function startCycleWithCD()
         if not work or not auto_cycle_cd or not auto_cycle_cd[0] then
             break
         end
-    end)
+    end
     cycle_thread_running = false
-end
+end)
 
 
 -- основной код
