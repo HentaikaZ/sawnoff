@@ -399,11 +399,6 @@ function main()
                     if alt_model_id and alt_model_id[0] and alt_model_id[0] > 0 then FindAltItem(inventory, alt_model_id[0]) end
                     sampSendChat('/invent')
                     sampAddChatMessage('[Информация] {FFFFFF}Сейчас откроется инвентарь.', 0x96FF00)
-                elseif not first_start then
-                    if sawnoffId and sawnoffId[0] and sawnoffId[0] > 0 then findItemById(inventory, sawnoffId[0]) end
-                    if alt_model_id and alt_model_id[0] and alt_model_id[0] > 0 then FindAltItem(inventory, alt_model_id[0]) end
-                    sampSendChat('/invent')
-                    sampAddChatMessage('[Информация] {FFFFFF}Сейчас откроется инвентарь.', 0x96FF00)
                 end
                 if auto_cycle_cd and auto_cycle_cd[0] then
                     wait(1000)
@@ -427,7 +422,7 @@ function main()
                             if delay_time == nil then delay_time = 60 end
                             wait(222)
                             send_cef('inventoryClose')
-                        elseif sawnoff_slot and type(sawnoff_slot) == 'number' then
+                        elseif sawnoff_slot ~= 3 then
                             send_cef('inventory.moveItemForce|{"slot": ' .. tostring(sawnoff_slot) .. ', "type": 1, "amount": 1}')
                             wait(333)
                             send_cef('clickOnButton|{"type": 2,"slot": 3, "action": 1}')
