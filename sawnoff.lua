@@ -397,7 +397,6 @@ function main()
                 if first_start then
                     if sawnoffId and sawnoffId[0] and sawnoffId[0] > 0 then findItemById(inventory, sawnoffId[0]) end
                     if alt_model_id and alt_model_id[0] and alt_model_id[0] > 0 then FindAltItem(inventory, alt_model_id[0]) end
-                    sampSendChat('/invent')
                     sampAddChatMessage('[Информация] {FFFFFF}Сейчас откроется инвентарь.', 0x96FF00)
                 end
                 if auto_cycle_cd and auto_cycle_cd[0] then
