@@ -324,7 +324,8 @@ local function startCycleWithCD()
                     wait(333)
                 end
                 sampAddChatMessage('[Информация] {FFFFFF}Альт-предмет одет. [CEF]', 0x96FF00)
-                sampSendClickTextdraw(65535)
+                wait(222)
+                send_cef('inventoryClose')
             else
                 sampAddChatMessage('[Информация] {FF6347}Альт-предмет не найден. [CEF]', 0x96FF00)
             end
@@ -424,6 +425,8 @@ function main()
                             local wait_start = os.time()
                             repeat wait(100) until delay_time ~= nil or not work or os.time() - wait_start > 10
                             if delay_time == nil then delay_time = 60 end
+                            wait(222)
+                            send_cef('inventoryClose')
                         elseif sawnoff_slot and type(sawnoff_slot) == 'number' then
                             send_cef('inventory.moveItemForce|{"slot": ' .. tostring(sawnoff_slot) .. ', "type": 1, "amount": 1}')
                             wait(333)
@@ -433,6 +436,8 @@ function main()
                             local wait_start = os.time()
                             repeat wait(100) until delay_time ~= nil or not work or os.time() - wait_start > 10
                             if delay_time == nil then delay_time = 60 end
+                            wait(222)
+                            send_cef('inventoryClose')
                         end
                     else
                         sampAddChatMessage('[Информация] {FFFFFF}«Обрез (активный аксессуар)» {FF6347}не найден{FFFFFF}.', 0x96FF00)
