@@ -275,6 +275,28 @@ function FindAltItem(inventory, alt_model_id)
 	return nil, nil
 end
 
+local function isPayDayBlocked()
+    local t = os.date('*t')
+    local min = t.min
+    return (min >= 28 and min <= 31) or (min >= 58 or min <= 1)
+end
+
+local function getPayDayUnlockTime()
+    local t = os.date('*t')
+    local min = t.min
+    local sec = t.sec
+
+    if min >= 28 and min <= 31 then
+        return math.max(0, (32 - min) * 60 - sec)
+    elseif min >= 58 then
+        return math.max(0, (60 - min) * 60 - sec + 2 * 60)
+    elseif min <= 1 then
+        return math.max(0, (2 - min) * 60 - sec)
+    end
+
+    return 0
+end
+
 local function startCycleWithCD()
     if cycle_thread_running then return end
     if not auto_cycle_cd or not auto_cycle_cd[0] then return end
