@@ -58,6 +58,12 @@ local auto_cycle_cd = imgui.new.bool(cfg.settings.auto_cycle_cd)
 local auto_update = imgui.new.bool(cfg.settings.auto_update)
 local debug_mode = imgui.new.bool(cfg.settings.dbg)
 
+if auto_swap[0] and auto_cycle_cd[0] then
+	auto_cycle_cd[0] = false
+	cfg.settings.auto_cycle_cd = false
+	inicfg.save(cfg, 'sawnoff.ini')
+end
+
 -- автообновление
 
 local update_version = nil
@@ -530,40 +536,32 @@ imgui.OnFrame(function() return main_window and main_window[0] and not isPauseMe
 		end
 	end
 	
-	imgui.Checkbox(u8' Авто смена на предмет (вкл/выкл)', auto_swap)
-    if auto_cycle_kd == true then
-        if auto_cycle_cd and auto_cycle_cd[0] then
-            auto_cycle_cd[0] = false
-            if cfg.settings.auto_cycle_cd ~= auto_cycle_cd[0] then cfg.settings.auto_cycle_cd = false; inicfg.save(cfg, 'sawnoff.ini') end
-            cycle_thread_running = false
-        end
-    else
-        if auto_swap and auto_swap[0] then
-            if cfg.settings.auto_swap ~= auto_swap[0] then cfg.settings.auto_swap = true; inicfg.save(cfg, 'sawnoff.ini') end
-            if work and auto_swap[0] then startAutoSwapThread() end
-        else
-            if cfg.settings.auto_swap ~= auto_swap[0] then cfg.settings.auto_swap = false; inicfg.save(cfg, 'sawnoff.ini') end
-        end
-    end
+	if imgui.Checkbox(u8' Авто смена на предмет (вкл/выкл)', auto_swap) and auto_swap and auto_swap[0] then
+		if auto_cycle_cd then auto_cycle_cd[0] = false end
+		cfg.settings.auto_cycle_cd = false
+		inicfg.save(cfg, 'sawnoff.ini')
+	end
+	if auto_swap and auto_swap[0] then
+		if cfg.settings.auto_swap ~= auto_swap[0] then cfg.settings.auto_swap = true; inicfg.save(cfg, 'sawnoff.ini') end
+		if work and auto_swap[0] then startAutoSwapThread() end
+	else
+		if cfg.settings.auto_swap ~= auto_swap[0] then cfg.settings.auto_swap = false; inicfg.save(cfg, 'sawnoff.ini') end
+	end
 	
-	imgui.Checkbox(u8' Авто смена на обрез после КД', auto_cycle_cd)
-    if auto_swap == true then
-        if auto_swap and auto_swap[0] then
-            auto_swap[0] = false
-            if cfg.settings.auto_swap ~= auto_swap[0] then cfg.settings.auto_swap = false; inicfg.save(cfg, 'sawnoff.ini') end
-            cycle_thread_running = false
-        end
-    else
-        if auto_cycle_cd and auto_cycle_cd[0] then
-            if cfg.settings.auto_cycle_cd ~= auto_cycle_cd[0] then cfg.settings.auto_cycle_cd = true; inicfg.save(cfg, 'sawnoff.ini') end
-            if work and auto_cycle_cd[0] and not cycle_thread_running then 
-                startCycleWithCD()
-            end
-        else
-            if cfg.settings.auto_cycle_cd ~= auto_cycle_cd[0] then cfg.settings.auto_cycle_cd = false; inicfg.save(cfg, 'sawnoff.ini') end
-            cycle_thread_running = false
-        end
-    end
+	if imgui.Checkbox(u8' Авто смена на обрез после КД', auto_cycle_cd) and auto_cycle_cd and auto_cycle_cd[0] then
+		if auto_swap then auto_swap[0] = false end
+		cfg.settings.auto_swap = false
+		inicfg.save(cfg, 'sawnoff.ini')
+	end
+	if auto_cycle_cd and auto_cycle_cd[0] then
+		if cfg.settings.auto_cycle_cd ~= auto_cycle_cd[0] then cfg.settings.auto_cycle_cd = true; inicfg.save(cfg, 'sawnoff.ini') end
+		if work and auto_cycle_cd[0] and not cycle_thread_running then 
+			startCycleWithCD()
+		end
+	else
+		if cfg.settings.auto_cycle_cd ~= auto_cycle_cd[0] then cfg.settings.auto_cycle_cd = false; inicfg.save(cfg, 'sawnoff.ini') end
+		cycle_thread_running = false
+	end
 	
 	imgui.Checkbox(u8' Автообновление', auto_update)
 	if auto_update and auto_update[0] then
