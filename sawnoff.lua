@@ -29,8 +29,8 @@ local cfg = inicfg.load({
 	}
 }, 'sawnoff_auto_collector')
 
-if not doesFileExist('sawnoff_auto_collector.ini') then
-    inicfg.save(cfg, 'sawnoff_auto_collector.ini')
+if not doesFileExist('sawnoff.ini') then
+    inicfg.save(cfg, 'sawnoff.ini')
 end
 
 local sawnoff = {
@@ -521,61 +521,77 @@ imgui.OnFrame(function() return main_window and main_window[0] and not isPauseMe
 	if auto_start and auto_start[0] then 
 		if cfg.settings.auto_start ~= auto_start[0] then
 			cfg.settings.auto_start = true
-			inicfg.save(cfg, 'sawnoff_auto_collector.ini')
+			inicfg.save(cfg, 'sawnoff.ini')
 		end
 	else
 		if cfg.settings.auto_start ~= auto_start[0] then
 			cfg.settings.auto_start = false
-			inicfg.save(cfg, 'sawnoff_auto_collector.ini')
+			inicfg.save(cfg, 'sawnoff.ini')
 		end
 	end
 	
 	imgui.Checkbox(u8' Авто смена на предмет (вкл/выкл)', auto_swap)
-	if auto_swap and auto_swap[0] then
-		if cfg.settings.auto_swap ~= auto_swap[0] then cfg.settings.auto_swap = true; inicfg.save(cfg, 'sawnoff_auto_collector.ini') end
-		if work and auto_swap[0] then startAutoSwapThread() end
-	else
-		if cfg.settings.auto_swap ~= auto_swap[0] then cfg.settings.auto_swap = false; inicfg.save(cfg, 'sawnoff_auto_collector.ini') end
-	end
+    if auto_cycle_kd == true then
+        if auto_cycle_cd and auto_cycle_cd[0] then
+            auto_cycle_cd[0] = false
+            if cfg.settings.auto_cycle_cd ~= auto_cycle_cd[0] then cfg.settings.auto_cycle_cd = false; inicfg.save(cfg, 'sawnoff.ini') end
+            cycle_thread_running = false
+        end
+    else
+        if auto_swap and auto_swap[0] then
+            if cfg.settings.auto_swap ~= auto_swap[0] then cfg.settings.auto_swap = true; inicfg.save(cfg, 'sawnoff.ini') end
+            if work and auto_swap[0] then startAutoSwapThread() end
+        else
+            if cfg.settings.auto_swap ~= auto_swap[0] then cfg.settings.auto_swap = false; inicfg.save(cfg, 'sawnoff.ini') end
+        end
+    end
 	
 	imgui.Checkbox(u8' Авто смена на обрез после КД', auto_cycle_cd)
-	if auto_cycle_cd and auto_cycle_cd[0] then
-		if cfg.settings.auto_cycle_cd ~= auto_cycle_cd[0] then cfg.settings.auto_cycle_cd = true; inicfg.save(cfg, 'sawnoff_auto_collector.ini') end
-		if work and auto_cycle_cd[0] and not cycle_thread_running then 
-			startCycleWithCD()
-		end
-	else
-		if cfg.settings.auto_cycle_cd ~= auto_cycle_cd[0] then cfg.settings.auto_cycle_cd = false; inicfg.save(cfg, 'sawnoff_auto_collector.ini') end
-		cycle_thread_running = false
-	end
+    if auto_swap == true then
+        if auto_swap and auto_swap[0] then
+            auto_swap[0] = false
+            if cfg.settings.auto_swap ~= auto_swap[0] then cfg.settings.auto_swap = false; inicfg.save(cfg, 'sawnoff.ini') end
+            cycle_thread_running = false
+        end
+    else
+        if auto_cycle_cd and auto_cycle_cd[0] then
+            if cfg.settings.auto_cycle_cd ~= auto_cycle_cd[0] then cfg.settings.auto_cycle_cd = true; inicfg.save(cfg, 'sawnoff.ini') end
+            if work and auto_cycle_cd[0] and not cycle_thread_running then 
+                startCycleWithCD()
+            end
+        else
+            if cfg.settings.auto_cycle_cd ~= auto_cycle_cd[0] then cfg.settings.auto_cycle_cd = false; inicfg.save(cfg, 'sawnoff.ini') end
+            cycle_thread_running = false
+        end
+    end
 	
 	imgui.Checkbox(u8' Автообновление', auto_update)
 	if auto_update and auto_update[0] then
 		if cfg.settings.auto_update ~= auto_update[0] then
 			cfg.settings.auto_update = true
-			inicfg.save(cfg, 'sawnoff_auto_collector.ini')
+			inicfg.save(cfg, 'sawnoff.ini')
 		end
 	else
 		if cfg.settings.auto_update ~= auto_update[0] then
 			cfg.settings.auto_update = false
-			inicfg.save(cfg, 'sawnoff_auto_collector.ini')
+			inicfg.save(cfg, 'sawnoff.ini')
 		end
 	end
 
 	imgui.SameLine()
 	imgui.Checkbox(u8' Debug', debug_mode)
 	if debug_mode and debug_mode[0] then
-		if cfg.settings.dbg ~= debug_mode[0] then cfg.settings.dbg = true; inicfg.save(cfg, 'sawnoff_auto_collector.ini') end
+		if cfg.settings.dbg ~= debug_mode[0] then cfg.settings.dbg = true; inicfg.save(cfg, 'sawnoff.ini') end
 	else
-		if cfg.settings.dbg ~= debug_mode[0] then cfg.settings.dbg = false; inicfg.save(cfg, 'sawnoff_auto_collector.ini') end
+		if cfg.settings.dbg ~= debug_mode[0] then cfg.settings.dbg = false; inicfg.save(cfg, 'sawnoff.ini') end
 	end
 	
 	imgui.InputInt(u8' ID модели предмета', alt_model_id, 0, 0)
-	if alt_model_id and alt_model_id[0] and cfg.settings.alt_model_id ~= alt_model_id[0] then cfg.settings.alt_model_id = alt_model_id[0]; inicfg.save(cfg, 'sawnoff_auto_collector.ini') end
+	if alt_model_id and alt_model_id[0] and cfg.settings.alt_model_id ~= alt_model_id[0] then cfg.settings.alt_model_id = alt_model_id[0]; inicfg.save(cfg, 'sawnoff.ini') end
 	imgui.Separator()
 
     imgui.InputInt(u8' Кастомный ID обреза', sawnoffId, 0, 0)
-	if sawnoffId and sawnoffId[0] and cfg.settings.sawnoff_id ~= sawnoffId[0] then cfg.settings.sawnoff_id = sawnoffId[0]; inicfg.save(cfg, 'sawnoff_auto_collector.ini') end
+	if sawnoffId and sawnoffId[0] and cfg.settings.sawnoff_id ~= sawnoffId[0] then cfg.settings.sawnoff_id = sawnoffId[0]; inicfg.save(cfg, 'sawnoff.ini') end
 	imgui.Separator()
 	
 	if work then 
@@ -679,7 +695,7 @@ function swapToAlt(scheduleReturn)
 		if alt_model_id == nil then alt_model_id = imgui.new.int(cfg.settings.alt_model_id) end
 		if alt_model_id[0] == nil then alt_model_id[0] = cfg.settings.alt_model_id end
 		cfg.settings.alt_model_id = alt_model_id[0]
-		inicfg.save(cfg, 'sawnoff_auto_collector.ini')
+		inicfg.save(cfg, 'sawnoff.ini')
 
 		sampSendChat('/invent')
 			wait(333)
@@ -702,7 +718,7 @@ function swapToAlt(scheduleReturn)
 				sampAddChatMessage('[Информация] {FFFFFF}Auto Swap {FF6347}отключен{FFFFFF}. Обрез будет собираться без свапа.', 0x96FF00)
 				if auto_swap then auto_swap[0] = false end
 				cfg.settings.auto_swap = false
-				inicfg.save(cfg, 'sawnoff_auto_collector.ini')
+				inicfg.save(cfg, 'sawnoff.ini')
 			end
 		end
 
@@ -755,7 +771,7 @@ function onReceivePacket(id)
         sawnoff = { textdraw_id = nil, textdraw_put_id = nil, textdraw_use_id = nil, [4] = false, [5] = false }
         alt = {_, _, _, false, false}
         cfg.settings.connected = false
-        inicfg.save(cfg, 'sawnoff_auto_collector.ini')
+        inicfg.save(cfg, 'sawnoff.ini')
         if work then work = false end
     elseif id == 34 then
         inventory = {}
@@ -763,7 +779,7 @@ function onReceivePacket(id)
         sawnoff = { textdraw_id = nil, textdraw_put_id = nil, textdraw_use_id = nil, [4] = false, [5] = false }
         alt = {_, _, _, false, false}
         cfg.settings.connected = true
-        inicfg.save(cfg, 'sawnoff_auto_collector.ini')
+        inicfg.save(cfg, 'sawnoff.ini')
         if auto_start and auto_start[0] then
             lua_thread.create(function() 
                 repeat wait(0) until sampIsLocalPlayerSpawned() and sampGetGamestate() == 3
@@ -782,7 +798,7 @@ end
 
 function onQuitGame()
 	cfg.settings.connected = false
-	inicfg.save(cfg, 'sawnoff_auto_collector.ini')
+	inicfg.save(cfg, 'sawnoff.ini')
 end
 
 function imgui.CenterText(text)
