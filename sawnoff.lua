@@ -338,17 +338,14 @@ local function startCycleWithCD()
                     if delay_time == nil then delay_time = 60 end
                 end
             end
-            
-            wait(500)
-            
+            wait(444)
             local alt_slot = FindAltItem(inventory, alt_model_id[0])
             if alt_slot then
                 if alt_slot ~= 3 then
                     send_cef('inventory.moveItemForce|{"slot": ' .. alt_slot .. ', "type": 1, "amount": 1}')
-                    wait(333)
+                    wait(222)
                 end
                 sampAddChatMessage('[Информация] {FFFFFF}Альт-предмет одет. [CEF]', 0x96FF00)
-                wait(222)
                 send_cef('inventoryClose')
             else
                 sampAddChatMessage('[Информация] {FF6347}Альт-предмет не найден. [CEF]', 0x96FF00)
@@ -418,60 +415,60 @@ function main()
             if not sampIsLocalPlayerSpawned() and sampGetGamestate() == 3 then
                 work = false
             else
-                if first_start then
-                    if sawnoffId and sawnoffId[0] and sawnoffId[0] > 0 then findItemById(inventory, sawnoffId[0]) end
-                    if alt_model_id and alt_model_id[0] and alt_model_id[0] > 0 then FindAltItem(inventory, alt_model_id[0]) end
-                    sampAddChatMessage('[Информация] {FFFFFF}Сейчас откроется инвентарь.', 0x96FF00)
-                end
                 if auto_cycle_cd and auto_cycle_cd[0] then
                     wait(1000)
                 else
-                    wait(333)
-                    local sawnoff_slot = findItemById(inventory, sawnoffId[0])
-                    if sawnoff_slot ~= nil then
-                        if sawnoff_slot ~= 3 then
-                            repeat
-                                sampSendChat('/invent')
+                    if first_start then
+                        if sawnoffId and sawnoffId[0] and sawnoffId[0] > 0 then findItemById(inventory, sawnoffId[0]) end
+                        if alt_model_id and alt_model_id[0] and alt_model_id[0] > 0 then FindAltItem(inventory, alt_model_id[0]) end
+                        sampAddChatMessage('[Информация] {FFFFFF}Сейчас откроется инвентарь.', 0x96FF00)
+                        wait(333)
+                        local sawnoff_slot = findItemById(inventory, sawnoffId[0])
+                        if sawnoff_slot ~= nil then
+                            if sawnoff_slot ~= 3 then
+                                repeat
+                                    sampSendChat('/invent')
+                                    wait(333)
+                                    sawnoff_slot = findItemById(inventory, sawnoffId[0])
+                                until sawnoff_slot or not work
+                            end
+                            if sawnoff_slot == 3 then
+                                send_cef('clickOnButton|{"type": 2,"slot": 3, "action": 1}')
+                                sawnoff[5] = true
+                                delay_time = nil
+                                local wait_start = os.time()
+                                repeat wait(100) until delay_time ~= nil or not work or os.time() - wait_start > 10
+                                if delay_time == nil then delay_time = 60 end
+                                wait(222)
+                                send_cef('inventoryClose')
+                            elseif sawnoff_slot ~= 3 then
+                                send_cef('inventory.moveItemForce|{"slot": ' .. tostring(sawnoff_slot) .. ', "type": 1, "amount": 1}')
                                 wait(333)
-                                sawnoff_slot = findItemById(inventory, sawnoffId[0])
-                            until sawnoff_slot or not work
-                        end
-                        if sawnoff_slot == 3 then
-                            send_cef('clickOnButton|{"type": 2,"slot": 3, "action": 1}')
-                            sawnoff[5] = true
-                            delay_time = nil
-                            local wait_start = os.time()
-                            repeat wait(100) until delay_time ~= nil or not work or os.time() - wait_start > 10
-                            if delay_time == nil then delay_time = 60 end
-                            wait(222)
+                                send_cef('clickOnButton|{"type": 2,"slot": 3, "action": 1}')
+                                sawnoff[5] = true
+                                delay_time = nil
+                                local wait_start = os.time()
+                                repeat wait(100) until delay_time ~= nil or not work or os.time() - wait_start > 10
+                                if delay_time == nil then delay_time = 60 end
+                                wait(222)
+                                send_cef('inventoryClose')
+                            end
+                        else
+                            sampAddChatMessage('[Информация] {FFFFFF}«Обрез (активный аксессуар)» {FF6347}не найден{FFFFFF}.', 0x96FF00)
+                            sampAddChatMessage('[Информация] {FFFFFF}Автоматический сбор обреза: {FF6347}выключен{FFFFFF}.', 0x96FF00)
                             send_cef('inventoryClose')
-                        elseif sawnoff_slot ~= 3 then
-                            send_cef('inventory.moveItemForce|{"slot": ' .. tostring(sawnoff_slot) .. ', "type": 1, "amount": 1}')
-                            wait(333)
-                            send_cef('clickOnButton|{"type": 2,"slot": 3, "action": 1}')
-                            sawnoff[5] = true
-                            delay_time = nil
-                            local wait_start = os.time()
-                            repeat wait(100) until delay_time ~= nil or not work or os.time() - wait_start > 10
-                            if delay_time == nil then delay_time = 60 end
-                            wait(222)
-                            send_cef('inventoryClose')
+                            showCursor(false)
+                            thisScript():reload()
                         end
-                    else
-                        sampAddChatMessage('[Информация] {FFFFFF}«Обрез (активный аксессуар)» {FF6347}не найден{FFFFFF}.', 0x96FF00)
-                        sampAddChatMessage('[Информация] {FFFFFF}Автоматический сбор обреза: {FF6347}выключен{FFFFFF}.', 0x96FF00)
-                        send_cef('inventoryClose')
-                        showCursor(false)
-                        thisScript():reload()
-                    end
-                wait(500)
-            end
-            send_cef('inventoryClose')
-            end
-            if delay_time ~= nil then
-                wait((tonumber(delay_time) or 60) * 60000 + 60000)
-                delay_time = nil
-                first_start = true
+                    wait(500)
+                end
+                send_cef('inventoryClose')
+                end
+                if delay_time ~= nil then
+                    wait((tonumber(delay_time) or 60) * 60000 + 60000)
+                    delay_time = nil
+                    first_start = true
+                end
             end
         end
     end
