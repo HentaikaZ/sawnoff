@@ -535,7 +535,7 @@ imgui.OnFrame(function() return main_window and main_window[0] and not isPauseMe
 		end
 	end
 	
-	if imgui.Checkbox(u8' Авто смена на предмет (вкл/выкл)', auto_swap) and auto_swap and auto_swap[0] then
+	if imgui.Checkbox(u8' Автоматическая смена на альтернативный предмет', auto_swap) and auto_swap and auto_swap[0] then
 		if auto_cycle_cd then auto_cycle_cd[0] = false end
 		cfg.settings.auto_cycle_cd = false
 		inicfg.save(cfg, 'sawnoff.ini')
@@ -547,7 +547,7 @@ imgui.OnFrame(function() return main_window and main_window[0] and not isPauseMe
 		if cfg.settings.auto_swap ~= auto_swap[0] then cfg.settings.auto_swap = false; inicfg.save(cfg, 'sawnoff.ini') end
 	end
 	
-	if imgui.Checkbox(u8' Авто смена на обрез после КД', auto_cycle_cd) and auto_cycle_cd and auto_cycle_cd[0] then
+	if imgui.Checkbox(u8' Автоматическая смена на обрез после КД', auto_cycle_cd) and auto_cycle_cd and auto_cycle_cd[0] then
 		if auto_swap then auto_swap[0] = false end
 		cfg.settings.auto_swap = false
 		inicfg.save(cfg, 'sawnoff.ini')
@@ -583,7 +583,7 @@ imgui.OnFrame(function() return main_window and main_window[0] and not isPauseMe
 		if cfg.settings.dbg ~= debug_mode[0] then cfg.settings.dbg = false; inicfg.save(cfg, 'sawnoff.ini') end
 	end
 	
-	imgui.InputInt(u8' ID модели предмета', alt_model_id, 0, 0)
+	imgui.InputInt(u8' ID альтернативного предмета', alt_model_id, 0, 0)
 	if alt_model_id and alt_model_id[0] and cfg.settings.alt_model_id ~= alt_model_id[0] then cfg.settings.alt_model_id = alt_model_id[0]; inicfg.save(cfg, 'sawnoff.ini') end
 	imgui.Separator()
 
