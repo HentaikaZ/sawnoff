@@ -445,7 +445,6 @@ function main()
                                 local wait_start = os.time()
                                 repeat wait(100) until delay_time ~= nil or not work or os.time() - wait_start > 10
                                 if delay_time == nil then delay_time = 60 end
-                                wait(222)
                                 send_cef('inventoryClose')
                             elseif sawnoff_slot ~= 3 then
                                 send_cef('inventory.moveItemForce|{"slot": ' .. tostring(sawnoff_slot) .. ', "type": 1, "amount": 1}')
@@ -456,7 +455,6 @@ function main()
                                 local wait_start = os.time()
                                 repeat wait(100) until delay_time ~= nil or not work or os.time() - wait_start > 10
                                 if delay_time == nil then delay_time = 60 end
-                                wait(222)
                                 send_cef('inventoryClose')
                             end
                         else
@@ -466,7 +464,7 @@ function main()
                             showCursor(false)
                             thisScript():reload()
                         end
-                    wait(500)
+                    wait(1)
                 end
                 send_cef('inventoryClose')
                 end
