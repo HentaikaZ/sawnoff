@@ -1,6 +1,6 @@
 script_name('Sawnoff')
 script_author('sakuta')
-script_version('2.0')
+script_version('2.1')
 
 -- библиотеки
 
@@ -27,7 +27,7 @@ local cfg = inicfg.load({
 		auto_update = true,
         dbg = false
 	}
-}, 'sawnoff_auto_collector')
+}, 'sawnoff')
 
 if not doesFileExist('sawnoff.ini') then
     inicfg.save(cfg, 'sawnoff.ini')
