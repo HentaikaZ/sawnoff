@@ -1,6 +1,6 @@
 script_name('Sawnoff')
 script_author('sakuta')
-script_version('3.0')
+script_version('2.8')
 
 -- Подключение библиотек
 local se = require 'lib.samp.events'
