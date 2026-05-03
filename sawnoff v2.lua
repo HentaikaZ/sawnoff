@@ -1,7 +1,8 @@
 script_name('Sawnoff')
 script_author('sakuta')
-script_version('3.2')
+script_version('3.3')
 
+-- Подключение библиотек
 local se = require 'lib.samp.events'
 local imgui = require 'mimgui'
 local inicfg = require 'inicfg'
@@ -10,7 +11,7 @@ local dlstatus = require('moonloader').download_status
 encoding.default = 'CP1251'
 u8 = encoding.UTF8
 
--- Конфиг
+-- Загрузка конфигурации
 local cfg = inicfg.load({
 	settings = {
 		auto_start = false,
@@ -21,29 +22,38 @@ local cfg = inicfg.load({
         sawnoffId = 5822,
 		auto_update = true,
         dbg = false,
-        sawnoff_slot = 0,
+        sawnoff_slot = 0,   -- только слот, без ID!
         alt_slot = 0,
 	}
 }, 'sawnoff')
 if not doesFileExist('sawnoff.ini') then inicfg.save(cfg, 'sawnoff.ini') end
 
--- Переменные
+-- Глобальные переменные
 local sawnoffFlag = { [4] = false, [5] = false }
+local alt = {_, _, _, false, false}
 local inventory = {}
 local sw, sh = getScreenResolution()
 local main_window = imgui.new.bool()
 local work = false
 local first_start = true
 local delay_time = nil
+local inventory_fix = false
 local cycle_thread_running = false
 local swap_thread_running = false
+
+-- Кэшированные слоты
 local cached_sawnoff_slot = nil
+local cached_sawnoff_type = nil
 local cached_alt_slot = nil
+local cached_alt_type = nil
+
+-- Флаги для проверки ID после клика
 local pending_verify_slot = nil
 local pending_verify_is_sawnoff = false
 
 -- Настройки ImGui
 local auto_start = imgui.new.bool(cfg.settings.auto_start)
+local connected = cfg.settings.connected
 local auto_swap = imgui.new.bool(cfg.settings.auto_swap)
 local alt_model_id = imgui.new.int(cfg.settings.alt_model_id)
 local sawnoffId = imgui.new.int(cfg.settings.sawnoffId)
@@ -57,17 +67,81 @@ if auto_swap[0] and auto_cycle_cd[0] then
 	inicfg.save(cfg, 'sawnoff.ini')
 end
 
--- ========================== ФУНКЦИИ ==========================
-function emul_num(arr)
+-- ========================== ФУНКЦИЯ ОБНОВЛЕНИЯ ==========================
+local update_version, update_url, update_available, update_notified, update_check_running
+
+local function checkForUpdate(manual)
+    if update_check_running then return end
+    update_check_running = true
+    lua_thread.create(function()
+        local json_url = "https://raw.githubusercontent.com/HentaikaZ/sawnoff/refs/heads/main/autoupdate.json"
+        local json_path = getWorkingDirectory() .. '\\' .. thisScript().name .. '-version.json'
+        if doesFileExist(json_path) then os.remove(json_path) end
+        downloadUrlToFile(json_url, json_path, function(id, status)
+            if status == dlstatus.STATUSEX_ENDDOWNLOAD and doesFileExist(json_path) then
+                local f = io.open(json_path, 'r')
+                if f then
+                    local content = f:read('*a'):gsub("^\239\187\191", ""):gsub("^%s*", ""):gsub("%s*$", "")
+                    f:close()
+                    os.remove(json_path)
+                    if content ~= "" then
+                        local success, info = pcall(decodeJson, content)
+                        if success and info and info.latest and info.updateurl then
+                            local latest = info.latest
+                            if latest ~= thisScript().version then
+                                update_available = true
+                                if manual or (auto_update and auto_update[0]) then
+                                    sampAddChatMessage(string.format('[Обновление] {FFFFFF}Доступна новая версия {FF6347}%s{FFFFFF}. Обновляю...', latest), 0x96FF00)
+                                    lua_thread.create(function()
+                                        wait(250)
+                                        downloadUrlToFile(info.updateurl, thisScript().path,
+                                            function(id3, status1, p13, p23)
+                                                if status1 == dlstatus.STATUS_DOWNLOADINGDATA then
+                                                    print(string.format('Скачано %d из %d.', p13, p23))
+                                                elseif status1 == dlstatus.STATUS_ENDDOWNLOADDATA then
+                                                    print('Обновление успешно завершено.')
+                                                    sampAddChatMessage('[Обновление] {FFFFFF}Обновление установлено!', 0x96FF00)
+                                                    lua_thread.create(function() wait(500) thisScript():reload() end)
+                                                end
+                                            end
+                                        )
+                                    end)
+                                elseif not update_notified then
+                                    sampAddChatMessage('[Обновление] {FFFFFF}Доступно обновление. Нажмите "Проверить обновления" для установки.', 0x96FF00)
+                                    update_notified = true
+                                end
+                            elseif manual then
+                                sampAddChatMessage('[Обновление] {FFFFFF}У вас установлена последняя версия.', 0x96FF00)
+                            end
+                        elseif manual then
+                            sampAddChatMessage('[Обновление] {FF6347}Ошибка проверки обновлений. Неверный формат данных.', 0x96FF00)
+                        end
+                    elseif manual then
+                        sampAddChatMessage('[Обновление] {FF6347}Пустой ответ от сервера обновлений.', 0x96FF00)
+                    end
+                end
+            elseif manual and status == dlstatus.STATUSEX_ABORTED then
+                sampAddChatMessage('[Обновление] {FF6347}Проверка обновлений отменена.', 0x96FF00)
+            end
+            update_check_running = false
+        end)
+    end)
+end
+
+-- ========================== ФУНКЦИИ РАБОТЫ С ИНВЕНТАРЁМ ==========================
+function emul_num(array)
     local bs = raknetNewBitStream()
-    for _, b in ipairs(arr) do raknetBitStreamWriteInt8(bs, b) end
+    for i, byte in ipairs(array) do
+        raknetBitStreamWriteInt8(bs, byte)
+    end
     raknetSendBitStream(bs)
     raknetDeleteBitStream(bs)
 end
 
 function send_cef(str)
-	if not str or str == "" then return end
+	if not str or type(str) ~= 'string' or #str == 0 then return end
 	local bs = raknetNewBitStream()
+	if not bs then return end
 	pcall(function()
 		raknetBitStreamWriteInt8(bs, 220)
 		raknetBitStreamWriteInt8(bs, 18)
@@ -87,114 +161,175 @@ local function refreshInventory()
     emul_num({220, 0, 27, 64})
     wait(100)
     sampSendChat('/invent')
-    if debug_mode[0] then sampAddChatMessage('[Отладка] Запрос инвентаря отправлен', 0x96FF00) end
+    if debug_mode[0] then
+        sampAddChatMessage('[Отладка] Запрос инвентаря отправлен', 0x96FF00)
+    end
 end
 
+-- Сохранение слота (без ID!)
 local function saveSawnoffSlot(slot)
     if slot and slot ~= cfg.settings.sawnoff_slot then
         cfg.settings.sawnoff_slot = slot
-        inicfg.save(cfg, 'sawnoff.ini')
-        sampAddChatMessage('[Sawnoff] Сохранён слот обреза: '..slot, 0x96FF00)
+        pcall(inicfg.save, cfg, 'sawnoff.ini')
+        sampAddChatMessage('[Sawnoff] {FFFFFF}Сохранён слот обреза: {FFD700}'..slot, 0x96FF00)
     end
 end
 
 local function saveAltSlot(slot)
     if slot and slot ~= cfg.settings.alt_slot then
         cfg.settings.alt_slot = slot
-        inicfg.save(cfg, 'sawnoff.ini')
-        sampAddChatMessage('[Sawnoff] Сохранён слот альт-предмета: '..slot, 0x96FF00)
+        pcall(inicfg.save, cfg, 'sawnoff.ini')
+        sampAddChatMessage('[Sawnoff] {FFFFFF}Сохранён слот альт-предмета: {FFD700}'..slot, 0x96FF00)
     end
 end
 
+-- Сброс сохранённого слота
 local function resetSawnoffSlot()
     if cfg.settings.sawnoff_slot ~= 0 then
         cfg.settings.sawnoff_slot = 0
-        inicfg.save(cfg, 'sawnoff.ini')
-        sampAddChatMessage('[Sawnoff] Слот обреза сброшен', 0x96FF00)
+        pcall(inicfg.save, cfg, 'sawnoff.ini')
+        sampAddChatMessage('[Sawnoff] {FF6347}Слот обреза сброшен (предмет не найден).', 0x96FF00)
     end
     cached_sawnoff_slot = nil
+    cached_sawnoff_type = nil
 end
 
 local function resetAltSlot()
     if cfg.settings.alt_slot ~= 0 then
         cfg.settings.alt_slot = 0
-        inicfg.save(cfg, 'sawnoff.ini')
-        sampAddChatMessage('[Sawnoff] Слот альт-предмета сброшен', 0x96FF00)
+        pcall(inicfg.save, cfg, 'sawnoff.ini')
+        sampAddChatMessage('[Sawnoff] {FF6347}Слот альт-предмета сброшен (предмет не найден).', 0x96FF00)
     end
     cached_alt_slot = nil
+    cached_alt_type = nil
 end
 
-function findItemById(id)
-    for slot, data in pairs(inventory) do
-        if data and data.item == id then return slot, data end
+-- Поиск предмета по ID во всём инвентаре
+function findItemById(item_id)
+	if not item_id or item_id <= 0 then return nil, nil end
+	for slot, data in pairs(inventory) do
+		if data and type(data) == 'table' and data.item == item_id then
+			return slot, data
+		end
+	end
+	return nil, nil
+end
+
+function FindAltItem(item_id)
+    return findItemById(item_id)
+end
+
+local function isEquippedItemData(data)
+    return data and tonumber(data.type) == 2
+end
+
+-- Клик с верификацией ID
+local function clickWithVerification(slot, isSawnoff)
+    if isSawnoff then
+        pending_verify_is_sawnoff = true
+        pending_verify_slot = slot
+    else
+        pending_verify_is_sawnoff = false
+        pending_verify_slot = slot
     end
-    return nil, nil
+    send_cef('inventory.getPlayerInventory')
+    wait(100)
+    send_cef('clickOnButton|{"type": 2,"slot": ' .. tostring(slot) .. ', "action": 1}')
 end
 
-local function clickSawnoffSlot(slot)
-    send_cef('clickOnButton|{"type": 2,"slot": '..tostring(slot)..', "action": 1}')
+local function clickSawnoffSlot(slot, data)
+    local click_slot = isEquippedItemData(data) and slot or 3
+    clickWithVerification(click_slot, true)
 end
 
+-- Обновление кэша: сначала поиск по ID, если не нашли — используем сохранённый слот
 local function updateCachedSlots()
-    -- Обрез
-    if sawnoffId[0] > 0 then
+    -- Обработка обреза
+    if sawnoffId and sawnoffId[0] and sawnoffId[0] > 0 then
         local slot, data = findItemById(sawnoffId[0])
         if slot then
+            -- Нашли по ID — сохраняем слот
             cached_sawnoff_slot = slot
+            cached_sawnoff_type = data and data.type or nil
             saveSawnoffSlot(slot)
-        elseif cfg.settings.sawnoff_slot ~= 0 then
-            -- Используем сохранённый слот без проверки ID (проверим при клике)
-            cached_sawnoff_slot = cfg.settings.sawnoff_slot
+            if debug_mode[0] then
+                sampAddChatMessage(string.format("[Отладка] Слот обреза найден по ID: %d", slot), 0x96FF00)
+            end
         else
-            cached_sawnoff_slot = nil
+            -- Не нашли по ID, пытаемся использовать сохранённый слот
+            if cfg.settings.sawnoff_slot ~= 0 then
+                cached_sawnoff_slot = cfg.settings.sawnoff_slot
+                cached_sawnoff_type = nil   -- тип неизвестен, проверим при клике
+                if debug_mode[0] then
+                    sampAddChatMessage(string.format("[Отладка] Используем сохранённый слот обреза: %d (ID неизвестен)", cfg.settings.sawnoff_slot), 0x96FF00)
+                end
+            else
+                cached_sawnoff_slot = nil
+                cached_sawnoff_type = nil
+            end
         end
     end
-    -- Альт-предмет
-    if alt_model_id[0] > 0 then
+    -- Обработка альт-предмета
+    if alt_model_id and alt_model_id[0] and alt_model_id[0] > 0 then
         local slot, data = findItemById(alt_model_id[0])
         if slot then
             cached_alt_slot = slot
+            cached_alt_type = data and data.type or nil
             saveAltSlot(slot)
-        elseif cfg.settings.alt_slot ~= 0 then
-            cached_alt_slot = cfg.settings.alt_slot
         else
-            cached_alt_slot = nil
+            if cfg.settings.alt_slot ~= 0 then
+                cached_alt_slot = cfg.settings.alt_slot
+                cached_alt_type = nil
+            else
+                cached_alt_slot = nil
+                cached_alt_type = nil
+            end
         end
     end
 end
 
--- Парсинг JSON
-local function parseInventoryPacket(str)
-    if not str or not str:find('event.inventory.playerInventory') then return end
-    for inv_type, items in str:gmatch('"type"%s*:%s*(%d+)%s*,%s*"items"%s*:%s*%[(.-)%]') do
+-- Парсинг JSON через регулярные выражения
+local function parseInventoryPacket(json_str)
+    if not json_str or not json_str:find('event.inventory.playerInventory') then return false end
+    for inv_type, items in json_str:gmatch('"type"%s*:%s*(%d+)%s*,%s*"items"%s*:%s*%[(.-)%]') do
         inv_type = tonumber(inv_type)
-        if inv_type == 1 or inv_type == 2 then
+        if inv_type == 1 or inv_type == 2 or inv_type == 3 then
             for item_blob in items:gmatch('{(.-)}') do
-                local slot = tonumber(item_blob:match('"slot"%s*:%s*(%d+)')) or 0
-                if slot > 0 then
-                    local item_id = tonumber(item_blob:match('"item"%s*:%s*(%d+)'))
-                    if item_id then
-                        inventory[slot] = { slot = slot, type = inv_type, item = item_id }
-                        -- Проверка после клика
+                local slot = item_blob:match('"slot"%s*:%s*(%d+)')
+                if slot then
+                    slot = tonumber(slot)
+                    local available = item_blob:match('"available"%s*:%s*(%d+)')
+                    local item_id = item_blob:match('"item"%s*:%s*(%d+)')
+                    local amount = item_blob:match('"amount"%s*:%s*(%d+)')
+                    if item_id and tonumber(item_id) then
+                        local id_num = tonumber(item_id)
+                        inventory[slot] = {
+                            slot = slot,
+                            type = inv_type,
+                            available = tonumber(available),
+                            item = id_num,
+                            amount = tonumber(amount) or 1
+                        }
+                        -- Проверка ожидаемых ID после клика
                         if pending_verify_slot == slot then
-                            pending_verify_slot = nil
                             if pending_verify_is_sawnoff then
-                                if item_id == sawnoffId[0] then
-                                    sampAddChatMessage('[Sawnoff] Обрез подтверждён в слоте '..slot, 0x96FF00)
+                                if id_num == sawnoffId[0] then
+                                    sampAddChatMessage('[Sawnoff] {42B02C}Обрез подтверждён в слоте '..slot, 0x96FF00)
                                 else
-                                    sampAddChatMessage('[Sawnoff] Обрез НЕ найден в слоте '..slot, 0xFF6347)
+                                    sampAddChatMessage('[Sawnoff] {FF6347}Обрез НЕ найден в слоте '..slot..' (ID '..id_num..' вместо '..sawnoffId[0]..').', 0x96FF00)
                                     resetSawnoffSlot()
                                     refreshInventory()
                                 end
                             else
-                                if item_id == alt_model_id[0] then
-                                    sampAddChatMessage('[Sawnoff] Альт-предмет подтверждён в слоте '..slot, 0x96FF00)
+                                if id_num == alt_model_id[0] then
+                                    sampAddChatMessage('[Sawnoff] {42B02C}Альт-предмет подтверждён в слоте '..slot, 0x96FF00)
                                 else
-                                    sampAddChatMessage('[Sawnoff] Альт-предмет НЕ найден в слоте '..slot, 0xFF6347)
+                                    sampAddChatMessage('[Sawnoff] {FF6347}Альт-предмет НЕ найден в слоте '..slot..' (ID '..id_num..' вместо '..alt_model_id[0]..').', 0x96FF00)
                                     resetAltSlot()
                                     refreshInventory()
                                 end
                             end
+                            pending_verify_slot = nil
                         end
                     else
                         inventory[slot] = nil
@@ -204,17 +339,21 @@ local function parseInventoryPacket(str)
         end
     end
     updateCachedSlots()
+    return true
 end
 
-local function readCefString(bs)
+local function readCefStringFromPacket(bs)
+    if not bs then return nil end
     local ok, str = pcall(function()
         raknetBitStreamIgnoreBits(bs, 8)
         if raknetBitStreamReadInt8(bs) ~= 17 then return nil end
         raknetBitStreamIgnoreBits(bs, 32)
-        local len = raknetBitStreamReadInt16(bs)
-        local enc = raknetBitStreamReadInt8(bs)
-        if enc ~= 0 then return raknetBitStreamDecodeString(bs, len + enc) end
-        return raknetBitStreamReadString(bs, len)
+        local length = raknetBitStreamReadInt16(bs)
+        local encoded = raknetBitStreamReadInt8(bs)
+        if encoded ~= 0 then
+            return raknetBitStreamDecodeString(bs, length + encoded)
+        end
+        return raknetBitStreamReadString(bs, length)
     end)
     if ok and str and str ~= "" then return str end
     return nil
@@ -222,82 +361,141 @@ end
 
 function onReceivePacket(id, bs)
     if id == 220 then
-        local cef = readCefString(bs)
-        if cef then
-            if cef == "inventoryItemsLoaded" then
+        local cef_str = readCefStringFromPacket(bs)
+        if cef_str then
+            if debug_mode[0] then sampAddChatMessage("[Отладка] CEF: " .. cef_str, 0x96FF00) end
+            if cef_str == "inventoryItemsLoaded" then
                 send_cef('inventory.getPlayerInventory')
                 return false
             end
-            parseInventoryPacket(cef)
+            parseInventoryPacket(cef_str)
         end
     end
+
     if id == 31 or id == 32 or id == 33 or id == 12 or id == 35 or id == 36 or id == 37 then
         inventory = {}
-        cached_sawnoff_slot = nil; cached_alt_slot = nil
+        cached_sawnoff_slot = nil
+        cached_alt_slot = nil
+        pending_verify_slot = nil
         cfg.settings.connected = false
-        inicfg.save(cfg, 'sawnoff.ini')
-        work = false
+        pcall(inicfg.save, cfg, 'sawnoff.ini')
+        if work then work = false end
     elseif id == 34 then
         inventory = {}
-        cached_sawnoff_slot = nil; cached_alt_slot = nil
+        cached_sawnoff_slot = nil
+        cached_alt_slot = nil
+        pending_verify_slot = nil
         cfg.settings.connected = true
-        inicfg.save(cfg, 'sawnoff.ini')
-        if auto_start[0] then
-            lua_thread.create(function()
-                while not sampIsLocalPlayerSpawned() do wait(100) end
+        pcall(inicfg.save, cfg, 'sawnoff.ini')
+        if auto_start and auto_start[0] then
+            lua_thread.create(function() 
+                repeat wait(0) until sampIsLocalPlayerSpawned() and sampGetGamestate() == 3
                 wait(2000)
-                if cfg.settings.connected and not work then
-                    work = true
-                    sampAddChatMessage('[Sawnoff] Автоматический режим включён', 0x96FF00)
-                    if auto_swap[0] then startAutoSwapThread() end
-                    if auto_cycle_cd[0] and not cycle_thread_running then startCycleWithCD() end
+                if cfg.settings.connected then
+                    if not work then
+                        work = true
+                        sampAddChatMessage('[Sawnoff] {FFFFFF}Автоматический режим работы: {42B02C}включён{FFFFFF}.', 0x96FF00)
+                        if auto_swap and auto_swap[0] then startAutoSwapThread() end
+                        if auto_cycle_cd and auto_cycle_cd[0] and not cycle_thread_running then startCycleWithCD() end
+                    end
                 end
             end)
         end
     end
 end
+
 addEventHandler('onReceivePacket', onReceivePacket)
 
--- Цикл и своп
+-- ======================== ОСНОВНЫЕ ФУНКЦИИ (цикл, своп) ========================
 local function isPayDayBlocked()
-    local min = os.date('*t').min
+    local t = os.date('*t')
+    local min = t.min
     return (min >= 28 and min <= 31) or (min >= 58 or min <= 1)
+end
+
+local function getPayDayUnlockTime()
+    local t = os.date('*t')
+    local min = t.min
+    local sec = t.sec
+    if min >= 28 and min <= 31 then return math.max(0, (32 - min) * 60 - sec)
+    elseif min >= 58 then return math.max(0, (60 - min) * 60 - sec + 2 * 60)
+    elseif min <= 1 then return math.max(0, (2 - min) * 60 - sec)
+    end
+    return 0
 end
 
 local function startCycleWithCD()
     if cycle_thread_running then return end
-    if not auto_cycle_cd[0] then return end
+    if not auto_cycle_cd or not auto_cycle_cd[0] then return end
     cycle_thread_running = true
     lua_thread.create(function()
-        while work and auto_cycle_cd[0] do
+        while work and auto_cycle_cd and auto_cycle_cd[0] do
             if isPayDayBlocked() then
-                local wait = (60 - os.date('*t').sec) % 60 + 60
-                sampAddChatMessage('[Sawnoff] PayDay, жду '..wait..' сек', 0x96FF00)
-                wait(wait * 1000)
+                local wait_time = getPayDayUnlockTime()
+                sampAddChatMessage(string.format('[Sawnoff] {FFFFFF}Цикл приостановлен из-за PayDay! Ждите {FF6347}%d сек.', wait_time), 0x96FF00)
+                wait(wait_time * 1000)
             end
             refreshInventory()
             local timeout = 0
             while cached_sawnoff_slot == nil and timeout < 30 do wait(200) timeout = timeout + 1 end
             if cached_sawnoff_slot then
-                pending_verify_slot = cached_sawnoff_slot
-                pending_verify_is_sawnoff = true
-                clickSawnoffSlot(cached_sawnoff_slot)
+                local sawnoff_data = inventory[cached_sawnoff_slot]
+                if cached_sawnoff_slot ~= 3 and not isEquippedItemData(sawnoff_data) then
+                    send_cef('inventory.moveItemForce|{"slot": ' .. tostring(cached_sawnoff_slot) .. ', "type": 1, "amount": 1}')
+                    wait(333)
+                end
+                clickSawnoffSlot(cached_sawnoff_slot, sawnoff_data)
                 sawnoffFlag[5] = true
                 delay_time = nil
-                local start = os.time()
-                repeat wait(100) until delay_time ~= nil or os.time() - start > 10
+                local wait_start = os.time()
+                repeat wait(100) until delay_time ~= nil or not work or os.time() - wait_start > 10
                 if delay_time == nil then delay_time = 60 end
+            else
+                sampAddChatMessage('[Sawnoff] {FF6347}Обрез не найден при цикле.', 0x96FF00)
             end
-            wait(500)
+            wait(444)
             if cached_alt_slot then
-                send_cef('inventory.moveItemForce|{"slot": '..cached_alt_slot..', "type": 1, "amount": 1}')
-                wait(200)
+                local alt_data = inventory[cached_alt_slot]
+                if cached_alt_slot ~= 3 and not isEquippedItemData(alt_data) then
+                    send_cef('inventory.moveItemForce|{"slot": ' .. tostring(cached_alt_slot) .. ', "type": 1, "amount": 1}')
+                    wait(222)
+                end
                 send_cef('inventoryClose')
             end
-            local mins = tonumber(delay_time) or 60
-            sampAddChatMessage('[Sawnoff] Ожидание '..mins..' мин', 0x96FF00)
-            wait(mins * 60000)
-            delay_time = nil
+            if delay_time then
+                local wait_minutes = tonumber(delay_time) or 60
+                sampAddChatMessage(string.format('[Sawnoff] {FFFFFF}Ожидание: {FFD700}%d {FFFFFF}минут.', wait_minutes), 0x96FF00)
+                local total_wait = wait_minutes * 60000
+                local elapsed = 0
+                while elapsed < total_wait and work and auto_cycle_cd[0] do
+                    if isPayDayBlocked() then
+                        local w = getPayDayUnlockTime()
+                        sampAddChatMessage(string.format('[Sawnoff] {FFFFFF}Цикл приостановлен из-за PayDay! Ждите {FF6347}%d сек.', w), 0x96FF00)
+                        wait(w * 1000)
+                        elapsed = 0
+                    else
+                        wait(5000)
+                        elapsed = elapsed + 5000
+                    end
+                end
+                delay_time = nil
+            else
+                sampAddChatMessage('[Sawnoff] {FFFFFF}КД не получен, жду 60 минут.', 0x96FF00)
+                local total_wait = 60 * 60000
+                local elapsed = 0
+                while elapsed < total_wait and work and auto_cycle_cd[0] do
+                    if isPayDayBlocked() then
+                        local w = getPayDayUnlockTime()
+                        sampAddChatMessage(string.format('[Sawnoff] {FFFFFF}Цикл приостановлен из-за PayDay! Ждите {FF6347}%d сек.', w), 0x96FF00)
+                        wait(w * 1000)
+                        elapsed = 0
+                    else
+                        wait(5000)
+                        elapsed = elapsed + 5000
+                    end
+                end
+            end
+            if not work or not auto_cycle_cd[0] then break end
         end
         cycle_thread_running = false
     end)
@@ -305,131 +503,184 @@ end
 
 function startAutoSwapThread()
     if swap_thread_running then return end
-    if not auto_swap[0] then return end
+    if not auto_swap or not auto_swap[0] then return end
     swap_thread_running = true
     lua_thread.create(function()
         while work and auto_swap[0] do
             local t = os.date('*t')
-            local sec = t.min * 60 + t.sec
+            local secs_now = t.min * 60 + t.sec
             local target1 = 28 * 60
             local target2 = 58 * 60
-            local w = math.min((target1 - sec) % 3600, (target2 - sec) % 3600)
-            wait(w * 1000)
-            if not work then break end
-            refreshInventory()
-            local timeout = 0
-            while cached_alt_slot == nil and timeout < 30 do wait(200) timeout = timeout + 1 end
-            if cached_alt_slot then
-                if cached_alt_slot ~= 3 then
-                    send_cef('inventory.moveItemForce|{"slot": '..cached_alt_slot..', "type": 1, "amount": 1}')
-                    wait(200)
-                end
-                send_cef('inventoryClose')
-            end
+            local diff1 = (target1 - secs_now) % 3600
+            local diff2 = (target2 - secs_now) % 3600
+            local wait_secs = math.min(diff1, diff2)
+            wait(wait_secs * 1000)
+            if not work or not auto_swap[0] then break end
+            swapToAlt(false)
             wait(5 * 60000)
             if not work then break end
-            refreshInventory()
-            timeout = 0
-            while cached_sawnoff_slot == nil and timeout < 30 do wait(200) timeout = timeout + 1 end
-            if cached_sawnoff_slot then
-                pending_verify_slot = cached_sawnoff_slot
-                pending_verify_is_sawnoff = true
-                clickSawnoffSlot(cached_sawnoff_slot)
-            end
+            swapToSawnoff()
         end
         swap_thread_running = false
     end)
 end
 
--- События
-function se.onServerMessage(color, text)
-    if work and sawnoffFlag[5] then
-        local d = text:match('Для использования этого аксессуара должно пройти ещё (%d+) минут!')
-        if d then delay_time = d; sawnoffFlag[5] = false; first_start = true end
+function swapToSawnoff()
+    refreshInventory()
+    local timeout = 0
+    while cached_sawnoff_slot == nil and timeout < 30 do wait(200) timeout = timeout + 1 end
+    if cached_sawnoff_slot then
+        local data = inventory[cached_sawnoff_slot]
+        if cached_sawnoff_slot == 3 or isEquippedItemData(data) then
+            clickSawnoffSlot(cached_sawnoff_slot, data)
+        else
+            send_cef('inventory.moveItemForce|{"slot": ' .. tostring(cached_sawnoff_slot) .. ', "type": 1, "amount": 1}')
+            wait(200)
+            clickSawnoffSlot(cached_sawnoff_slot, data)
+        end
+        send_cef('inventoryClose')
+        sampAddChatMessage('[Sawnoff] {FFFFFF}Надет Sawnoff.', 0x96FF00)
+    else
+        sampAddChatMessage('[Sawnoff] {FFFFFF}Sawnoff не найден в инвентаре.', 0x96FF00)
     end
-    if work and text:find('недостаточного количества зарядов') then
-        sampAddChatMessage('[Sawnoff] Аксессуар сломан, скрипт остановлен', 0xFF6347)
-        thisScript():reload()
+end
+
+function swapToAlt(scheduleReturn)
+    if scheduleReturn == nil then scheduleReturn = true end
+    refreshInventory()
+    local timeout = 0
+    while cached_alt_slot == nil and timeout < 30 do wait(200) timeout = timeout + 1 end
+    if cached_alt_slot then
+        local alt_data = inventory[cached_alt_slot]
+        if cached_alt_slot ~= 3 and not isEquippedItemData(alt_data) then
+            send_cef('inventory.moveItemForce|{"slot": ' .. tostring(cached_alt_slot) .. ', "type": 1, "amount": 1}')
+            wait(200)
+        end
+        sampAddChatMessage('[Sawnoff] {FFFFFF}Альт-предмет (ID '..alt_model_id[0]..') надет.', 0x96FF00)
+        send_cef('inventoryClose')
+        if scheduleReturn and auto_swap[0] then
+            lua_thread.create(function() wait(5 * 60000) swapToSawnoff() end)
+        end
+    else
+        sampAddChatMessage('[Sawnoff] {FFFFFF}Альт-предмет с ID: {FFD700}'..alt_model_id[0]..' {FF6347}не найден{FFFFFF}.', 0x96FF00)
+        if auto_swap then auto_swap[0] = false end
+        cfg.settings.auto_swap = false
+        pcall(inicfg.save, cfg, 'sawnoff.ini')
+    end
+end
+
+-- ======================== ОБРАБОТЧИКИ СОБЫТИЙ ========================
+function se.onShowDialog(dialogId, style, title, button1, button2, text)
+    if not title then return end
+    if inventory_fix and title:find('Инвентарь') then
+        sampSendDialogResponse(dialogId, 0, nil, nil)
+        inventory_fix = false
+        return false
+    end
+    if title:find('Информация о персонаже') then
+        sampAddChatMessage('[Sawnoff] {FFFFFF}Появилось окно "Информация"! Скрипт {FF6347}остановлен.', 0x96FF00)
         work = false
     end
 end
 
-function se.onApplyPlayerAnimation(playerId, animLib)
-    if work and sawnoffFlag[5] and playerId == sampGetPlayerIdByCharHandle(getPlayerPed()) and animLib == 'BOMBER' then
-        sawnoffFlag[5] = false
+function se.onServerMessage(color, text)
+    if work and sawnoffFlag[5] then
+        local delay_match = text:match('Для использования этого аксессуара должно пройти ещё (%d+) минут!')
+        if delay_match then
+            delay_time = delay_match
+            sampAddChatMessage('[Sawnoff] {FFFFFF}КД на использование! Ожидание: {FFD700}'..delay_time..' {FFFFFF}мин.', 0x96FF00)
+            sawnoffFlag[5] = false
+            first_start = true
+        end
+    end
+    if work then
+        if text:find('Использование аксессуара на данный момент невозможно из-за недостаточного количества зарядов!') then
+            sampAddChatMessage('[Sawnoff] {FFFFFF}Аксессуар {FF6347}сломан! Скрипт {FF6347}остановлен.', 0x96FF00)
+            thisScript():reload()
+            work = false
+        end
     end
 end
 
--- Обновление
-local function checkForUpdate(manual)
-    local json_path = getWorkingDirectory() .. '\\sawnoff-version.json'
-    if doesFileExist(json_path) then os.remove(json_path) end
-    downloadUrlToFile("https://raw.githubusercontent.com/HentaikaZ/sawnoff/refs/heads/main/autoupdate.json", json_path,
-        function(id, status)
-            if status == dlstatus.STATUSEX_ENDDOWNLOAD and doesFileExist(json_path) then
-                local f = io.open(json_path, 'r')
-                if f then
-                    local content = f:read('*a'):gsub("^\239\187\191", "")
-                    f:close()
-                    os.remove(json_path)
-                    local ok, info = pcall(decodeJson, content)
-                    if ok and info and info.latest and info.latest ~= thisScript().version then
-                        if manual or auto_update[0] then
-                            sampAddChatMessage('[Обновление] Загружаю версию '..info.latest, 0x96FF00)
-                            downloadUrlToFile(info.updateurl, thisScript().path, function(_, st)
-                                if st == dlstatus.STATUS_ENDDOWNLOADDATA then
-                                    sampAddChatMessage('[Обновление] Готово, перезагрузка...', 0x96FF00)
-                                    lua_thread.create(function() wait(500) thisScript():reload() end)
-                                end
-                            end)
-                        elseif not manual then
-                            sampAddChatMessage('[Обновление] Доступна новая версия. /sawnoff -> Проверить', 0x96FF00)
-                        end
-                    elseif manual then
-                        sampAddChatMessage('[Обновление] Последняя версия', 0x96FF00)
-                    end
-                end
+function se.onApplyPlayerAnimation(playerId, animLib, animName, frameDelta, loop, lockX, lockY, freeze, time)
+    if work and sawnoffFlag[5] then
+        local playerPed = getPlayerPed()
+        if playerPed then
+            local _, id = sampGetPlayerIdByCharHandle(playerPed)
+            if playerId == id and animLib == 'BOMBER' then
+                sawnoffFlag[5] = false
             end
-        end)
+        end
+    end
 end
 
--- Главный поток
+-- ========================== ГЛАВНЫЙ ПОТОК ==========================
 function main()
+    if not isSampLoaded() or not isSampfuncsLoaded() then return end
     while not isSampAvailable() do wait(100) end
-    if auto_update[0] then checkForUpdate(false) end
-    sampRegisterChatCommand('sawnoff', function() main_window[0] = not main_window[0] end)
-    sampAddChatMessage('[Sawnoff] Загружен. /sawnoff', 0x96FF00)
+    if auto_update and auto_update[0] then
+        checkForUpdate(false)
+    end
+    sampRegisterChatCommand('sawnoff', function() if main_window then main_window[0] = not main_window[0] end end)
+    sampAddChatMessage('[Sawnoff] {FFFFFF}Скрипт загружен. Используйте {FFD700}/sawnoff{FFFFFF} для настройки.', 0x96FF00)
     while true do
         wait(0)
         if work then
-            if not sampIsLocalPlayerSpawned() then work = false
-            elseif auto_cycle_cd[0] then wait(1000)
-            elseif first_start then
-                refreshInventory()
-                local t = 0
-                while cached_sawnoff_slot == nil and t < 40 do wait(200) t = t + 1 end
-                if cached_sawnoff_slot then
-                    pending_verify_slot = cached_sawnoff_slot
-                    pending_verify_is_sawnoff = true
-                    clickSawnoffSlot(cached_sawnoff_slot)
-                    sawnoffFlag[5] = true
-                    delay_time = nil
-                    local start = os.time()
-                    repeat wait(100) until delay_time ~= nil or os.time() - start > 10
-                    if delay_time == nil then delay_time = 60 end
+            if not sampIsLocalPlayerSpawned() and sampGetGamestate() == 3 then
+                work = false
+            else
+                if auto_cycle_cd and auto_cycle_cd[0] then
+                    wait(1000)
                 else
-                    sampAddChatMessage('[Sawnoff] Обрез не найден', 0xFF6347)
-                    thisScript():reload()
+                    if first_start then
+                        refreshInventory()
+                        local timeout = 0
+                        while cached_sawnoff_slot == nil and timeout < 40 do wait(200) timeout = timeout + 1 end
+                        if cached_sawnoff_slot then
+                            local sawnoff_data = inventory[cached_sawnoff_slot]
+                            if cached_sawnoff_slot == 3 or (sawnoff_data and sawnoff_data.type == 2) then
+                                clickSawnoffSlot(cached_sawnoff_slot, sawnoff_data)
+                                sawnoffFlag[5] = true
+                                delay_time = nil
+                                local wait_start = os.time()
+                                repeat wait(100) until delay_time ~= nil or not work or os.time() - wait_start > 10
+                                if delay_time == nil then delay_time = 60 end
+                                send_cef('inventoryClose')
+                            else
+                                send_cef('inventory.moveItemForce|{"slot": ' .. tostring(cached_sawnoff_slot) .. ', "type": 1, "amount": 1}')
+                                wait(333)
+                                clickSawnoffSlot(cached_sawnoff_slot, sawnoff_data)
+                                sawnoffFlag[5] = true
+                                delay_time = nil
+                                local wait_start = os.time()
+                                repeat wait(100) until delay_time ~= nil or not work or os.time() - wait_start > 10
+                                if delay_time == nil then delay_time = 60 end
+                                send_cef('inventoryClose')
+                            end
+                        else
+                            sampAddChatMessage('[Sawnoff] {FFFFFF}Обрез (Sawnoff) {FF6347}не найден{FFFFFF}.', 0x96FF00)
+                            sampAddChatMessage('[Sawnoff] {FFFFFF}Автоматический режим работы: {FF6347}отключён{FFFFFF}.', 0x96FF00)
+                            send_cef('inventoryClose')
+                            showCursor(false)
+                            thisScript():reload()
+                        end
+                        first_start = false
+                    end
+                    send_cef('inventoryClose')
                 end
-                first_start = false
-                send_cef('inventoryClose')
-            end
-            if delay_time then
-                wait((tonumber(delay_time) or 60) * 60000 + 60000)
-                delay_time = nil
-                first_start = true
+                if delay_time ~= nil then
+                    wait((tonumber(delay_time) or 60) * 60000 + 60000)
+                    delay_time = nil
+                    first_start = true
+                end
             end
         end
+    end
+end
+
+function se.onShowTextDraw(id, data)
+    if id == 65535 then
+        updateCachedSlots()
     end
 end
 
@@ -453,10 +704,10 @@ imgui.OnFrame(function() return main_window and main_window[0] and not isPauseMe
     imgui.CenterText('Настройка скрипта')
     imgui.PopFont()
     imgui.PushFont(Font[18])
-    imgui.PushStyleColor(imgui.Col.Button, imgui.ImVec4(0.48,0.48,0.48,0.72))
-    imgui.PushStyleColor(imgui.Col.ButtonHovered, imgui.ImVec4(0.62,0.62,0.62,0.82))
-    imgui.PushStyleColor(imgui.Col.ButtonActive, imgui.ImVec4(0.78,0.78,0.78,0.92))
-    if imgui.Button('X', imgui.ImVec2(50,25), imgui.SameLine(530)) then
+    imgui.PushStyleColor(imgui.Col.Button, imgui.ImVec4(0.48, 0.48, 0.48, 0.72))
+    imgui.PushStyleColor(imgui.Col.ButtonHovered, imgui.ImVec4(0.62, 0.62, 0.62, 0.82))
+    imgui.PushStyleColor(imgui.Col.ButtonActive, imgui.ImVec4(0.78, 0.78, 0.78, 0.92))
+    if imgui.Button('X', imgui.ImVec2(50, 25), imgui.SameLine(530)) then
         if main_window then main_window[0] = false end
     end
     imgui.PopStyleColor(3)
@@ -524,17 +775,17 @@ imgui.OnFrame(function() return main_window and main_window[0] and not isPauseMe
     end
     imgui.Separator()
     if work then 
-        imgui.PushStyleColor(imgui.Col.Button, imgui.ImVec4(0.48,0.48,0.48,0.72))
-        imgui.PushStyleColor(imgui.Col.ButtonHovered, imgui.ImVec4(0.62,0.62,0.62,0.82))
-        imgui.PushStyleColor(imgui.Col.ButtonActive, imgui.ImVec4(0.78,0.78,0.78,0.92))
+        imgui.PushStyleColor(imgui.Col.Button, imgui.ImVec4(0.48, 0.48, 0.48, 0.72))
+        imgui.PushStyleColor(imgui.Col.ButtonHovered, imgui.ImVec4(0.62, 0.62, 0.62, 0.82))
+        imgui.PushStyleColor(imgui.Col.ButtonActive, imgui.ImVec4(0.78, 0.78, 0.78, 0.92))
     else
-        imgui.PushStyleColor(imgui.Col.Button, imgui.ImVec4(0.48,0.48,0.48,0.72))
-        imgui.PushStyleColor(imgui.Col.ButtonHovered, imgui.ImVec4(0.62,0.62,0.62,0.82))
-        imgui.PushStyleColor(imgui.Col.ButtonActive, imgui.ImVec4(0.78,0.78,0.78,0.92))
+        imgui.PushStyleColor(imgui.Col.Button, imgui.ImVec4(0.48, 0.48, 0.48, 0.72))
+        imgui.PushStyleColor(imgui.Col.ButtonHovered, imgui.ImVec4(0.62, 0.62, 0.62, 0.82))
+        imgui.PushStyleColor(imgui.Col.ButtonActive, imgui.ImVec4(0.78, 0.78, 0.78, 0.92))
     end
     imgui.SetCursorPosY(372)
     imgui.SetCursorPosX(205)
-    if imgui.Button(work and u8('Остановить') or u8('Запустить'), imgui.ImVec2(170,30)) then 
+    if imgui.Button(work and u8('Остановить') or u8('Запустить'), imgui.ImVec2(170, 30)) then 
         if not work then
             if cfg.settings.connected and sampGetGamestate() == 3 and sampIsLocalPlayerSpawned() then
                 work = true
@@ -555,11 +806,11 @@ imgui.OnFrame(function() return main_window and main_window[0] and not isPauseMe
     imgui.Separator()
     imgui.SetCursorPosY(410)
     imgui.SetCursorPosX(115)
-    if imgui.Button(u8('Проверить обновления'), imgui.ImVec2(170,30)) then
+    if imgui.Button(u8('Проверить обновления'), imgui.ImVec2(170, 30)) then
         checkForUpdate(true)
     end
     imgui.SameLine()
-    if imgui.Button(u8('Ryodan famq <3'), imgui.ImVec2(170,30)) then
+    if imgui.Button(u8('Ryodan famq <3'), imgui.ImVec2(170, 30)) then
         os.execute('explorer.exe "https://parad1st.github.io/Screamer/"')
     end
     imgui.PopFont()
