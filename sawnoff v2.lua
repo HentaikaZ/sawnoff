@@ -1,6 +1,6 @@
 script_name('Sawnoff')
 script_author('sakuta')
-script_version('2.5')
+script_version('2.6')
 
 -- Подключение библиотек
 local se = require 'lib.samp.events'
@@ -77,10 +77,7 @@ local function checkForUpdate(manual)
     lua_thread.create(function()
         local json_url = "https://raw.githubusercontent.com/HentaikaZ/sawnoff/refs/heads/main/autoupdate.json"
         local json_path = getWorkingDirectory() .. '\\' .. thisScript().name .. '-version.json'
-        if doesFileExist(json_path) then
-            os.remove(json_path)
-        end
-        
+        if doesFileExist(json_path) then os.remove(json_path) end
         downloadUrlToFile(json_url, json_path, function(id, status, p1, p2)
             if status == dlstatus.STATUSEX_ENDDOWNLOAD then
                 if doesFileExist(json_path) then
@@ -89,11 +86,8 @@ local function checkForUpdate(manual)
                         local content = f:read('*a')
                         f:close()
                         os.remove(json_path)
-                        -- Удаляем возможный BOM (U+FEFF) и лишние пробелы
                         if content then
-                            content = content:gsub("^\239\187\191", "") -- удаляем UTF-8 BOM
-                            content = content:gsub("^%s*", "") -- удаляем начальные пробелы
-                            content = content:gsub("%s*$", "") -- удаляем конечные пробелы
+                            content = content:gsub("^\239\187\191", ""):gsub("^%s*", ""):gsub("%s*$", "")
                         end
                         if not content or content == "" then
                             if manual then
@@ -108,7 +102,6 @@ local function checkForUpdate(manual)
                             local update_link = info.updateurl
                             update_version = latest
                             update_url = update_link
-                            
                             if latest ~= thisScript().version then
                                 update_available = true
                                 if manual then
@@ -162,14 +155,6 @@ local function checkForUpdate(manual)
                                 sampAddChatMessage('[Обновление] {FF6347}Ошибка проверки обновлений. Неверный формат данных.', 0x96FF00)
                             end
                         end
-                    else
-                        if manual then
-                            sampAddChatMessage('[Обновление] {FF6347}Не удалось создать файл обновления.', 0x96FF00)
-                        end
-                    end
-                else
-                    if manual then
-                        sampAddChatMessage('[Обновление] {FF6347}Не удалось загрузить информацию об обновлении.', 0x96FF00)
                     end
                 end
             elseif status == dlstatus.STATUSEX_ABORTED then
@@ -260,10 +245,10 @@ local function updateCachedSlots()
     end
 end
 
+-- Парсинг через регулярные выражения
 local function parseInventoryPacket(json_str)
     if not json_str or not json_str:find('event.inventory.playerInventory') then return false end
     
-    -- Находим поочерёдно секции для каждого типа инвентаря (1,2,3)
     for inv_type, items in json_str:gmatch('"type"%s*:%s*(%d+)%s*,%s*"items"%s*:%s*%[(.-)%]') do
         inv_type = tonumber(inv_type)
         if inv_type == 1 or inv_type == 2 or inv_type == 3 then
@@ -353,6 +338,9 @@ function onReceivePacket(id, bs)
         end
     end
 end
+
+-- РЕГИСТРАЦИЯ ОБРАБОТЧИКА (ВАЖНО!)
+addEventHandler('onReceivePacket', onReceivePacket)
 
 -- ======================== ОСНОВНЫЕ ФУНКЦИИ ========================
 local function isPayDayBlocked()
@@ -607,11 +595,21 @@ function main()
                     wait(1000)
                 else
                     if first_start then
+                        -- Принудительно запрашиваем инвентарь и ждём ответа
                         sampSendChat('/invent')
                         local timeout = 0
-                        while not cached_sawnoff_slot and timeout < 50 do
+                        while (cached_sawnoff_slot == nil) and timeout < 50 do
                             wait(100)
                             timeout = timeout + 1
+                        end
+                        if cached_sawnoff_slot == nil then
+                            -- Пробуем ещё раз
+                            sampSendChat('/invent')
+                            timeout = 0
+                            while (cached_sawnoff_slot == nil) and timeout < 30 do
+                                wait(100)
+                                timeout = timeout + 1
+                            end
                         end
                         if cached_sawnoff_slot then
                             local sawnoff_data = inventory[cached_sawnoff_slot]
@@ -824,7 +822,6 @@ function imgui.Theme()
     imgui.GetStyle().TabRounding = 5
     imgui.GetStyle().WindowTitleAlign = imgui.ImVec2(0.5, 0.5)
     imgui.GetStyle().ButtonTextAlign = imgui.ImVec2(0.5, 0.5)
-    -- Цветовая схема (оставлена из оригинального скрипта)
     local colors = imgui.GetStyle().Colors
     colors[imgui.Col.Text] = imgui.ImVec4(0.96, 0.96, 0.96, 1.00)
     colors[imgui.Col.TextDisabled] = imgui.ImVec4(0.62, 0.62, 0.62, 1.00)
