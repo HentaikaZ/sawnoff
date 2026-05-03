@@ -1,6 +1,6 @@
 script_name('Sawnoff')
 script_author('sakuta')
-script_version('2.2')
+script_version('2.3')
 
 -- библиотеки
 
@@ -801,6 +801,7 @@ function onReceivePacket(id)
         if auto_start and auto_start[0] then
             lua_thread.create(function() 
                 repeat wait(0) until sampIsLocalPlayerSpawned() and sampGetGamestate() == 3
+                wait(2000)
                 if cfg.settings.connected ~= false then
                     if not work then
                         work = true
