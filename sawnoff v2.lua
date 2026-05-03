@@ -634,6 +634,7 @@ function se.onApplyPlayerAnimation(playerId, animLib, animName, frameDelta, loop
             local _, id = sampGetPlayerIdByCharHandle(playerPed)
             if playerId == id and animLib == 'BOMBER' then
                 sawnoff[5] = false
+                send_cef('inventoryClose')
             end
         end
     end
