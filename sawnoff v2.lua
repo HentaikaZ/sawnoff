@@ -1,6 +1,6 @@
 script_name('Sawnoff')
 script_author('sakuta')
-script_version('2.1')
+script_version('2.2')
 
 -- библиотеки
 
@@ -23,7 +23,7 @@ local cfg = inicfg.load({
 		auto_swap = false,
         auto_cycle_cd = false,
 		alt_model_id = 3166,
-        sawnoff_id = 5822,
+        sawnoffId = 5822,
 		auto_update = true,
         dbg = false
 	}
@@ -53,7 +53,7 @@ local auto_start = imgui.new.bool(cfg.settings.auto_start)
 local connected = cfg.settings.connected
 local auto_swap = imgui.new.bool(cfg.settings.auto_swap)
 local alt_model_id = imgui.new.int(cfg.settings.alt_model_id)
-local sawnoffId = imgui.new.int(cfg.settings.sawnoff_id)
+local sawnoffId = imgui.new.int(cfg.settings.sawnoffId)
 local auto_cycle_cd = imgui.new.bool(cfg.settings.auto_cycle_cd)
 local auto_update = imgui.new.bool(cfg.settings.auto_update)
 local debug_mode = imgui.new.bool(cfg.settings.dbg)
@@ -281,6 +281,26 @@ function FindAltItem(inventory, alt_model_id)
 	return nil, nil
 end
 
+local function waitForInventoryItem(item_id, timeout_ms)
+    if not item_id or item_id <= 0 then return nil, nil end
+
+    local elapsed = 0
+    timeout_ms = timeout_ms or 5000
+    sampSendChat('/invent')
+
+    while elapsed < timeout_ms and work do
+        wait(250)
+        elapsed = elapsed + 250
+
+        local slot, data = findItemById(inventory, item_id)
+        if slot then
+            return slot, data
+        end
+    end
+
+    return nil, nil
+end
+
 local function isPayDayBlocked()
     local t = os.date('*t')
     local min = t.min
@@ -428,8 +448,7 @@ function main()
                         if sawnoffId and sawnoffId[0] and sawnoffId[0] > 0 then findItemById(inventory, sawnoffId[0]) end
                         if alt_model_id and alt_model_id[0] and alt_model_id[0] > 0 then FindAltItem(inventory, alt_model_id[0]) end
                         sampAddChatMessage('[Информация] {FFFFFF}Сейчас откроется инвентарь.', 0x96FF00)
-                        wait(333)
-                        local sawnoff_slot = findItemById(inventory, sawnoffId[0])
+                        local sawnoff_slot = waitForInventoryItem(sawnoffId[0], 5000)
                         if sawnoff_slot ~= nil then
                             if sawnoff_slot ~= 3 then
                                 repeat
@@ -588,7 +607,7 @@ imgui.OnFrame(function() return main_window and main_window[0] and not isPauseMe
 	imgui.Separator()
 
     imgui.InputInt(u8' Кастомный ID обреза', sawnoffId, 0, 0)
-	if sawnoffId and sawnoffId[0] and cfg.settings.sawnoff_id ~= sawnoffId[0] then cfg.settings.sawnoff_id = sawnoffId[0]; inicfg.save(cfg, 'sawnoff.ini') end
+	if sawnoffId and sawnoffId[0] and cfg.settings.sawnoffId ~= sawnoffId[0] then cfg.settings.sawnoffId = sawnoffId[0]; inicfg.save(cfg, 'sawnoff.ini') end
 	imgui.Separator()
 	
 	if work then 
@@ -767,7 +786,7 @@ function onReceivePacket(id)
     if id == 31 or id == 32 or id == 33 or id == 12 or id == 35 or id == 36 or id == 37 then
         inventory = {}
         inventory_id = nil
-        sawnoff = { textdraw_id = nil, textdraw_put_id = nil, textdraw_use_id = nil, [4] = false, [5] = false }
+        sawnoff = { [4] = false, [5] = false }
         alt = {_, _, _, false, false}
         cfg.settings.connected = false
         inicfg.save(cfg, 'sawnoff.ini')
@@ -775,7 +794,7 @@ function onReceivePacket(id)
     elseif id == 34 then
         inventory = {}
         inventory_id = nil
-        sawnoff = { textdraw_id = nil, textdraw_put_id = nil, textdraw_use_id = nil, [4] = false, [5] = false }
+        sawnoff = { [4] = false, [5] = false }
         alt = {_, _, _, false, false}
         cfg.settings.connected = true
         inicfg.save(cfg, 'sawnoff.ini')
