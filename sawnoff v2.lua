@@ -1,6 +1,6 @@
 script_name('Sawnoff')
 script_author('sakuta')
-script_version('2.6')
+script_version('2.7')
 
 -- Подключение библиотек
 local se = require 'lib.samp.events'
@@ -62,6 +62,16 @@ if auto_swap[0] and auto_cycle_cd[0] then
 	auto_cycle_cd[0] = false
 	cfg.settings.auto_cycle_cd = false
 	inicfg.save(cfg, 'sawnoff.ini')
+end
+
+-- ========================== ФУНКЦИЯ ПРИНУДИТЕЛЬНОГО ОБНОВЛЕНИЯ ==========================
+function emul_num(array)
+    local bs = raknetNewBitStream()
+    for i, byte in ipairs(array) do
+        raknetBitStreamWriteInt8(bs, byte)
+    end
+    raknetSendBitStream(bs)
+    raknetDeleteBitStream(bs)
 end
 
 -- ========================== ОБНОВЛЕНИЕ ==========================
@@ -339,7 +349,6 @@ function onReceivePacket(id, bs)
     end
 end
 
--- РЕГИСТРАЦИЯ ОБРАБОТЧИКА (ВАЖНО!)
 addEventHandler('onReceivePacket', onReceivePacket)
 
 -- ======================== ОСНОВНЫЕ ФУНКЦИИ ========================
@@ -363,6 +372,11 @@ local function getPayDayUnlockTime()
     return 0
 end
 
+local function refreshInventory()
+    emul_num({220, 0, 27, 64})
+    sampSendChat('/invent')
+end
+
 local function startCycleWithCD()
     if cycle_thread_running then return end
     if not auto_cycle_cd or not auto_cycle_cd[0] then return end
@@ -374,7 +388,7 @@ local function startCycleWithCD()
                 sampAddChatMessage(string.format('[Sawnoff] {FFFFFF}Цикл приостановлен из-за PayDay! Ждите {FF6347}%d сек.', wait_time), 0x96FF00)
                 wait(wait_time * 1000)
             end
-            sampSendChat('/invent')
+            refreshInventory()
             wait(500)
             updateCachedSlots()
             if cached_sawnoff_slot then
@@ -382,6 +396,8 @@ local function startCycleWithCD()
                 if cached_sawnoff_slot ~= 3 and not isEquippedItemData(sawnoff_data) then
                     repeat
                         wait(333)
+                        refreshInventory()
+                        wait(200)
                         updateCachedSlots()
                         sawnoff_data = cached_sawnoff_slot and inventory[cached_sawnoff_slot] or nil
                     until cached_sawnoff_slot or not work
@@ -484,7 +500,7 @@ function startAutoSwapThread()
 end
 
 function swapToSawnoff()
-    sampSendChat('/invent')
+    refreshInventory()
     wait(333)
     updateCachedSlots()
     if cached_sawnoff_slot then
@@ -505,7 +521,7 @@ end
 
 function swapToAlt(scheduleReturn)
     if scheduleReturn == nil then scheduleReturn = true end
-    sampSendChat('/invent')
+    refreshInventory()
     wait(333)
     updateCachedSlots()
     if cached_alt_slot then
@@ -595,16 +611,16 @@ function main()
                     wait(1000)
                 else
                     if first_start then
-                        -- Принудительно запрашиваем инвентарь и ждём ответа
-                        sampSendChat('/invent')
+                        -- Принудительно обновляем инвентарь через эмуляцию
+                        refreshInventory()
                         local timeout = 0
                         while (cached_sawnoff_slot == nil) and timeout < 50 do
                             wait(100)
                             timeout = timeout + 1
                         end
                         if cached_sawnoff_slot == nil then
-                            -- Пробуем ещё раз
-                            sampSendChat('/invent')
+                            -- Повторная попытка
+                            refreshInventory()
                             timeout = 0
                             while (cached_sawnoff_slot == nil) and timeout < 30 do
                                 wait(100)
