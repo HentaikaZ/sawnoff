@@ -22,7 +22,6 @@ local cfg = inicfg.load({
         sawnoffId = 5822,
 		auto_update = true,
         dbg = false,
-        -- Сохраняемые слоты (как в первом скрипте)
         sawnoff_slot = 0,
         alt_slot = 0,
 	}
