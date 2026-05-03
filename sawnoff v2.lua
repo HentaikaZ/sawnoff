@@ -1,6 +1,6 @@
 script_name('Sawnoff')
 script_author('sakuta')
-script_version('3.3')
+script_version('3.4')
 
 -- Подключение библиотек
 local se = require 'lib.samp.events'
@@ -609,6 +609,7 @@ function se.onApplyPlayerAnimation(playerId, animLib, animName, frameDelta, loop
             local _, id = sampGetPlayerIdByCharHandle(playerPed)
             if playerId == id and animLib == 'BOMBER' then
                 sawnoffFlag[5] = false
+                send_cef('inventoryClose')
             end
         end
     end
