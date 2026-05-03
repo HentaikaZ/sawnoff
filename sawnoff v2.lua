@@ -1,6 +1,6 @@
 script_name('Sawnoff')
 script_author('sakuta')
-script_version('2.8')
+script_version('2.9')
 
 -- Подключение библиотек
 local se = require 'lib.samp.events'
@@ -242,6 +242,30 @@ function FindAltItem(inventory, alt_model_id)
 end
 
 -- Обновление кэша слотов с сохранением в конфиг
+local function saveSawnoffSlot(slot)
+    if slot and slot ~= cfg.settings.sawnoff_slot then
+        cfg.settings.sawnoff_slot = slot
+        local ok, err = pcall(inicfg.save, cfg, 'sawnoff.ini')
+        if ok then
+            sampAddChatMessage('[Sawnoff] {FFFFFF}Сохранён слот обреза: {FFD700}'..slot, 0x96FF00)
+        else
+            sampAddChatMessage('[Sawnoff] {FF6347}Ошибка сохранения слота обреза: '..tostring(err), 0x96FF00)
+        end
+    end
+end
+
+local function saveAltSlot(slot)
+    if slot and slot ~= cfg.settings.alt_slot then
+        cfg.settings.alt_slot = slot
+        local ok, err = pcall(inicfg.save, cfg, 'sawnoff.ini')
+        if ok then
+            sampAddChatMessage('[Sawnoff] {FFFFFF}Сохранён слот альт-предмета: {FFD700}'..slot, 0x96FF00)
+        else
+            sampAddChatMessage('[Sawnoff] {FF6347}Ошибка сохранения слота альт-предмета: '..tostring(err), 0x96FF00)
+        end
+    end
+end
+
 local function updateCachedSlots()
     -- Обработка обреза
     if sawnoffId and sawnoffId[0] and sawnoffId[0] > 0 then
@@ -259,14 +283,7 @@ local function updateCachedSlots()
         if not slot then
             slot, data = findItemById(inventory, sawnoffId[0])
             if slot then
-                cfg.settings.sawnoff_slot = slot
-                inicfg.save(cfg, 'sawnoff.ini')
-                if debug_mode[0] then
-                    sampAddChatMessage(string.format("[Отладка] Сохранён новый слот обреза: %d", slot), 0x96FF00)
-                end
-            else
-                cfg.settings.sawnoff_slot = 0
-                inicfg.save(cfg, 'sawnoff.ini')
+                saveSawnoffSlot(slot)
             end
         end
         if slot then
@@ -294,14 +311,7 @@ local function updateCachedSlots()
         if not slot then
             slot, data = FindAltItem(inventory, alt_model_id[0])
             if slot then
-                cfg.settings.alt_slot = slot
-                inicfg.save(cfg, 'sawnoff.ini')
-                if debug_mode[0] then
-                    sampAddChatMessage(string.format("[Отладка] Сохранён новый слот альт-предмета: %d", slot), 0x96FF00)
-                end
-            else
-                cfg.settings.alt_slot = 0
-                inicfg.save(cfg, 'sawnoff.ini')
+                saveAltSlot(slot)
             end
         end
         if slot then
@@ -633,7 +643,6 @@ function se.onApplyPlayerAnimation(playerId, animLib, animName, frameDelta, loop
             local _, id = sampGetPlayerIdByCharHandle(playerPed)
             if playerId == id and animLib == 'BOMBER' then
                 sawnoff[5] = false
-                send_cef('inventoryClose')
             end
         end
     end
@@ -750,6 +759,11 @@ imgui.OnFrame(function() return main_window and main_window[0] and not isPauseMe
     imgui.CenterText('Версия скрипта: ' .. thisScript().version)
     imgui.Separator()
 
+    -- Отображение сохранённых слотов
+    imgui.Text(u8('Сохранённый слот обреза: ' .. (cfg.settings.sawnoff_slot ~= 0 and cfg.settings.sawnoff_slot or 'не сохранён')))
+    imgui.Text(u8('Сохранённый слот альт-предмета: ' .. (cfg.settings.alt_slot ~= 0 and cfg.settings.alt_slot or 'не сохранён')))
+    imgui.Separator()
+
     if imgui.Checkbox(u8('  Автоматический старт при входе на сервер'), auto_start) then
         cfg.settings.auto_start = auto_start[0]
         inicfg.save(cfg, 'sawnoff.ini')
@@ -790,8 +804,9 @@ imgui.OnFrame(function() return main_window and main_window[0] and not isPauseMe
     if imgui.InputInt(u8('  ID альтернативного предмета'), alt_model_id, 0, 0) then
         if alt_model_id[0] ~= cfg.settings.alt_model_id then
             cfg.settings.alt_model_id = alt_model_id[0]
-            cfg.settings.alt_slot = 0  -- Сброс сохранённого слота
+            cfg.settings.alt_slot = 0
             inicfg.save(cfg, 'sawnoff.ini')
+            updateCachedSlots()
         end
     end
     imgui.Separator()
@@ -799,7 +814,7 @@ imgui.OnFrame(function() return main_window and main_window[0] and not isPauseMe
     if imgui.InputInt(u8('  ID обреза (Sawnoff)'), sawnoffId, 0, 0) then
         if sawnoffId[0] ~= cfg.settings.sawnoffId then
             cfg.settings.sawnoffId = sawnoffId[0]
-            cfg.settings.sawnoff_slot = 0  -- Сброс сохранённого слота
+            cfg.settings.sawnoff_slot = 0
             inicfg.save(cfg, 'sawnoff.ini')
             updateCachedSlots()
         end
