@@ -1,6 +1,6 @@
 script_name('Sawnoff')
 script_author('sakuta')
-script_version('3.0')
+script_version('3.1')
 
 -- Подключение библиотек
 local se = require 'lib.samp.events'
@@ -69,6 +69,67 @@ if auto_swap[0] and auto_cycle_cd[0] then
 	auto_cycle_cd[0] = false
 	cfg.settings.auto_cycle_cd = false
 	inicfg.save(cfg, 'sawnoff.ini')
+end
+
+-- ========================== ФУНКЦИЯ ОБНОВЛЕНИЯ (ДОЛЖНА БЫТЬ РАНЬШЕ ВЫЗОВА) ==========================
+local update_version, update_url, update_available, update_notified, update_check_running
+
+local function checkForUpdate(manual)
+    if update_check_running then return end
+    update_check_running = true
+    lua_thread.create(function()
+        local json_url = "https://raw.githubusercontent.com/HentaikaZ/sawnoff/refs/heads/main/autoupdate.json"
+        local json_path = getWorkingDirectory() .. '\\' .. thisScript().name .. '-version.json'
+        if doesFileExist(json_path) then os.remove(json_path) end
+        downloadUrlToFile(json_url, json_path, function(id, status)
+            if status == dlstatus.STATUSEX_ENDDOWNLOAD and doesFileExist(json_path) then
+                local f = io.open(json_path, 'r')
+                if f then
+                    local content = f:read('*a'):gsub("^\239\187\191", ""):gsub("^%s*", ""):gsub("%s*$", "")
+                    f:close()
+                    os.remove(json_path)
+                    if content ~= "" then
+                        local success, info = pcall(decodeJson, content)
+                        if success and info and info.latest and info.updateurl then
+                            local latest = info.latest
+                            if latest ~= thisScript().version then
+                                update_available = true
+                                if manual or (auto_update and auto_update[0]) then
+                                    sampAddChatMessage(string.format('[Обновление] {FFFFFF}Доступна новая версия {FF6347}%s{FFFFFF}. Обновляю...', latest), 0x96FF00)
+                                    lua_thread.create(function()
+                                        wait(250)
+                                        downloadUrlToFile(info.updateurl, thisScript().path,
+                                            function(id3, status1, p13, p23)
+                                                if status1 == dlstatus.STATUS_DOWNLOADINGDATA then
+                                                    print(string.format('Скачано %d из %d.', p13, p23))
+                                                elseif status1 == dlstatus.STATUS_ENDDOWNLOADDATA then
+                                                    print('Обновление успешно завершено.')
+                                                    sampAddChatMessage('[Обновление] {FFFFFF}Обновление установлено!', 0x96FF00)
+                                                    lua_thread.create(function() wait(500) thisScript():reload() end)
+                                                end
+                                            end
+                                        )
+                                    end)
+                                elseif not update_notified then
+                                    sampAddChatMessage('[Обновление] {FFFFFF}Доступно обновление. Нажмите "Проверить обновления" для установки.', 0x96FF00)
+                                    update_notified = true
+                                end
+                            elseif manual then
+                                sampAddChatMessage('[Обновление] {FFFFFF}У вас установлена последняя версия.', 0x96FF00)
+                            end
+                        elseif manual then
+                            sampAddChatMessage('[Обновление] {FF6347}Ошибка проверки обновлений. Неверный формат данных.', 0x96FF00)
+                        end
+                    elseif manual then
+                        sampAddChatMessage('[Обновление] {FF6347}Пустой ответ от сервера обновлений.', 0x96FF00)
+                    end
+                end
+            elseif manual and status == dlstatus.STATUSEX_ABORTED then
+                sampAddChatMessage('[Обновление] {FF6347}Проверка обновлений отменена.', 0x96FF00)
+            end
+            update_check_running = false
+        end)
+    end)
 end
 
 -- ========================== ФУНКЦИИ ==========================
@@ -545,7 +606,9 @@ end
 function main()
     if not isSampLoaded() or not isSampfuncsLoaded() then return end
     while not isSampAvailable() do wait(100) end
-    if auto_update and auto_update[0] then checkForUpdate(false) end
+    if auto_update and auto_update[0] then
+        checkForUpdate(false)
+    end
     sampRegisterChatCommand('sawnoff', function() if main_window then main_window[0] = not main_window[0] end end)
     sampAddChatMessage('[Sawnoff] {FFFFFF}Скрипт загружен. Используйте {FFD700}/sawnoff{FFFFFF} для настройки.', 0x96FF00)
     while true do
@@ -605,67 +668,6 @@ end
 
 function se.onShowTextDraw(id, data)
     if id == 65535 then updateCachedSlots() end
-end
-
--- ========================== ФУНКЦИЯ ОБНОВЛЕНИЯ ==========================
-local update_version, update_url, update_available, update_notified, update_check_running
-
-local function checkForUpdate(manual)
-    if update_check_running then return end
-    update_check_running = true
-    lua_thread.create(function()
-        local json_url = "https://raw.githubusercontent.com/HentaikaZ/sawnoff/refs/heads/main/autoupdate.json"
-        local json_path = getWorkingDirectory() .. '\\' .. thisScript().name .. '-version.json'
-        if doesFileExist(json_path) then os.remove(json_path) end
-        downloadUrlToFile(json_url, json_path, function(id, status)
-            if status == dlstatus.STATUSEX_ENDDOWNLOAD and doesFileExist(json_path) then
-                local f = io.open(json_path, 'r')
-                if f then
-                    local content = f:read('*a'):gsub("^\239\187\191", ""):gsub("^%s*", ""):gsub("%s*$", "")
-                    f:close()
-                    os.remove(json_path)
-                    if content ~= "" then
-                        local success, info = pcall(decodeJson, content)
-                        if success and info and info.latest and info.updateurl then
-                            local latest = info.latest
-                            if latest ~= thisScript().version then
-                                update_available = true
-                                if manual or (auto_update and auto_update[0]) then
-                                    sampAddChatMessage(string.format('[Обновление] {FFFFFF}Доступна новая версия {FF6347}%s{FFFFFF}. Обновляю...', latest), 0x96FF00)
-                                    lua_thread.create(function()
-                                        wait(250)
-                                        downloadUrlToFile(info.updateurl, thisScript().path,
-                                            function(id3, status1, p13, p23)
-                                                if status1 == dlstatus.STATUS_DOWNLOADINGDATA then
-                                                    print(string.format('Скачано %d из %d.', p13, p23))
-                                                elseif status1 == dlstatus.STATUS_ENDDOWNLOADDATA then
-                                                    print('Обновление успешно завершено.')
-                                                    sampAddChatMessage('[Обновление] {FFFFFF}Обновление установлено!', 0x96FF00)
-                                                    lua_thread.create(function() wait(500) thisScript():reload() end)
-                                                end
-                                            end
-                                        )
-                                    end)
-                                elseif not update_notified then
-                                    sampAddChatMessage('[Обновление] {FFFFFF}Доступно обновление. Нажмите "Проверить обновления" для установки.', 0x96FF00)
-                                    update_notified = true
-                                end
-                            elseif manual then
-                                sampAddChatMessage('[Обновление] {FFFFFF}У вас установлена последняя версия.', 0x96FF00)
-                            end
-                        elseif manual then
-                            sampAddChatMessage('[Обновление] {FF6347}Ошибка проверки обновлений. Неверный формат данных.', 0x96FF00)
-                        end
-                    elseif manual then
-                        sampAddChatMessage('[Обновление] {FF6347}Пустой ответ от сервера обновлений.', 0x96FF00)
-                    end
-                end
-            elseif manual and status == dlstatus.STATUSEX_ABORTED then
-                sampAddChatMessage('[Обновление] {FF6347}Проверка обновлений отменена.', 0x96FF00)
-            end
-            update_check_running = false
-        end)
-    end)
 end
 
 -- ========================== GUI ==========================
