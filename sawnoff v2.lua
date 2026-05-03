@@ -1,6 +1,6 @@
 script_name('Sawnoff')
 script_author('sakuta')
-script_version('2.4')
+script_version('2.5')
 
 -- Подключение библиотек
 local se = require 'lib.samp.events'
@@ -77,7 +77,10 @@ local function checkForUpdate(manual)
     lua_thread.create(function()
         local json_url = "https://raw.githubusercontent.com/HentaikaZ/sawnoff/refs/heads/main/autoupdate.json"
         local json_path = getWorkingDirectory() .. '\\' .. thisScript().name .. '-version.json'
-        if doesFileExist(json_path) then os.remove(json_path) end
+        if doesFileExist(json_path) then
+            os.remove(json_path)
+        end
+        
         downloadUrlToFile(json_url, json_path, function(id, status, p1, p2)
             if status == dlstatus.STATUSEX_ENDDOWNLOAD then
                 if doesFileExist(json_path) then
@@ -86,13 +89,26 @@ local function checkForUpdate(manual)
                         local content = f:read('*a')
                         f:close()
                         os.remove(json_path)
-                        -- Используем встроенный decodeJson
+                        -- Удаляем возможный BOM (U+FEFF) и лишние пробелы
+                        if content then
+                            content = content:gsub("^\239\187\191", "") -- удаляем UTF-8 BOM
+                            content = content:gsub("^%s*", "") -- удаляем начальные пробелы
+                            content = content:gsub("%s*$", "") -- удаляем конечные пробелы
+                        end
+                        if not content or content == "" then
+                            if manual then
+                                sampAddChatMessage('[Обновление] {FF6347}Пустой ответ от сервера обновлений.', 0x96FF00)
+                            end
+                            update_check_running = false
+                            return
+                        end
                         local success, info = pcall(decodeJson, content)
                         if success and info and info.latest and info.updateurl then
                             local latest = info.latest
                             local update_link = info.updateurl
                             update_version = latest
                             update_url = update_link
+                            
                             if latest ~= thisScript().version then
                                 update_available = true
                                 if manual then
@@ -142,12 +158,24 @@ local function checkForUpdate(manual)
                                 end
                             end
                         else
-                            sampAddChatMessage('[Обновление] {FF6347}Ошибка проверки обновлений. Повторите позже.', 0x96FF00)
+                            if manual then
+                                sampAddChatMessage('[Обновление] {FF6347}Ошибка проверки обновлений. Неверный формат данных.', 0x96FF00)
+                            end
                         end
+                    else
+                        if manual then
+                            sampAddChatMessage('[Обновление] {FF6347}Не удалось создать файл обновления.', 0x96FF00)
+                        end
+                    end
+                else
+                    if manual then
+                        sampAddChatMessage('[Обновление] {FF6347}Не удалось загрузить информацию об обновлении.', 0x96FF00)
                     end
                 end
             elseif status == dlstatus.STATUSEX_ABORTED then
-                sampAddChatMessage('[Обновление] {FF6347}Процесс обновления отменён.', 0x96FF00)
+                if manual then
+                    sampAddChatMessage('[Обновление] {FF6347}Проверка обновлений отменена.', 0x96FF00)
+                end
             end
             update_check_running = false
         end)
@@ -232,45 +260,38 @@ local function updateCachedSlots()
     end
 end
 
--- Парсинг JSON строки (без cjson)
 local function parseInventoryPacket(json_str)
-    if not json_str or json_str == "" then return false end
-    local success, data = pcall(decodeJson, json_str)
-    if not success or not data then return false end
-
-    if data.event == "inventory.playerInventory" and data.data then
-        local inv_data = data.data
-        if type(inv_data) == "table" then
-            for _, inv_type_data in ipairs(inv_data) do
-                local inv_type = inv_type_data.type
-                local items = inv_type_data.items
-                if items and type(items) == "table" then
-                    for _, item in ipairs(items) do
-                        local slot = tonumber(item.slot)
-                        if slot then
-                            if item.item then
-                                local item_id = tonumber(item.item)
-                                if item_id then
-                                    inventory[slot] = {
-                                        slot = slot,
-                                        type = inv_type,
-                                        available = item.available,
-                                        item = item_id,
-                                        amount = item.amount or 1
-                                    }
-                                end
-                            else
-                                inventory[slot] = nil
-                            end
-                        end
+    if not json_str or not json_str:find('event.inventory.playerInventory') then return false end
+    
+    -- Находим поочерёдно секции для каждого типа инвентаря (1,2,3)
+    for inv_type, items in json_str:gmatch('"type"%s*:%s*(%d+)%s*,%s*"items"%s*:%s*%[(.-)%]') do
+        inv_type = tonumber(inv_type)
+        if inv_type == 1 or inv_type == 2 or inv_type == 3 then
+            for item_blob in items:gmatch('{(.-)}') do
+                local slot = item_blob:match('"slot"%s*:%s*(%d+)')
+                if slot then
+                    slot = tonumber(slot)
+                    local available = item_blob:match('"available"%s*:%s*(%d+)')
+                    local item_id = item_blob:match('"item"%s*:%s*(%d+)')
+                    local amount = item_blob:match('"amount"%s*:%s*(%d+)')
+                    
+                    if item_id and tonumber(item_id) then
+                        inventory[slot] = {
+                            slot = slot,
+                            type = inv_type,
+                            available = tonumber(available),
+                            item = tonumber(item_id),
+                            amount = tonumber(amount) or 1
+                        }
+                    else
+                        inventory[slot] = nil
                     end
                 end
             end
-            updateCachedSlots()
-            return true
         end
     end
-    return false
+    updateCachedSlots()
+    return true
 end
 
 local function readCefStringFromPacket(bs)
@@ -286,7 +307,9 @@ local function readCefStringFromPacket(bs)
         end
         return raknetBitStreamReadString(bs, length)
     end)
-    if ok then return str end
+    if ok and str and str ~= "" then
+        return str
+    end
     return nil
 end
 
