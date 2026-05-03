@@ -1,6 +1,6 @@
 script_name('Sawnoff')
 script_author('sakuta')
-script_version('3.4')
+script_version('3.5')
 
 -- Подключение библиотек
 local se = require 'lib.samp.events'
@@ -591,6 +591,10 @@ function se.onServerMessage(color, text)
             sampAddChatMessage('[Sawnoff] {FFFFFF}КД на использование! Ожидание: {FFD700}'..delay_time..' {FFFFFF}мин.', 0x96FF00)
             sawnoffFlag[5] = false
             first_start = true
+        end
+        if text:match('[Информация] Вы использовали запас обрезов.') then
+            wait(222)
+            send_cef('inventoryClose')
         end
     end
     if work then
