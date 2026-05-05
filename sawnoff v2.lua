@@ -1,6 +1,6 @@
 script_name('Sawnoff')
 script_author('sakuta')
-script_version('3.7')
+script_version('2.0')
 
 -- Подключение библиотек
 local se = require 'lib.samp.events'
@@ -397,7 +397,10 @@ function onReceivePacket(id, bs)
                         sampAddChatMessage('[Sawnoff] {FFFFFF}Автоматический режим работы: {42B02C}включён{FFFFFF}.', 0x96FF00)
                         if auto_swap and auto_swap[0] then startAutoSwapThread() end
                         if auto_cycle_cd and auto_cycle_cd[0] and not cycle_thread_running then startCycleWithCD() end
-                    end
+                        if not auto_swap and auto_swap[0] and not auto_cycle_cd and auto_cycle_cd[0] then
+                            first_start = true
+                        end
+                    end 
                 end
             end)
         end
