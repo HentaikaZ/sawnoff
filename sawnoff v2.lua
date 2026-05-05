@@ -1,6 +1,6 @@
 script_name('Sawnoff')
 script_author('sakuta')
-script_version('2.1')
+script_version('2.0')
 
 -- Подключение библиотек
 local se = require 'lib.samp.events'
@@ -282,9 +282,10 @@ end
 
 -- Парсинг JSON — теперь только для личного инвентаря (типы 1 и 2)
 local function parseInventoryPacket(json_str)
-    -- Игнорируем, если это не инвентарь игрока (нет слотов типа 1 или 2)
+    -- Игнорируем, если это не инвентарь игрока
     if not json_str or not json_str:find('event.inventory.playerInventory') then return false end
-    if not json_str:find('"type":1') and not json_str:find('"type":2') then return false end
+    -- Личный инвентарь ВСЕГДА содержит слоты типа 2 (экипировка). Если их нет — это магазин/сундук
+    if not json_str:find('"type":2') then return false end
     
     for inv_type, items in json_str:gmatch('"type"%s*:%s*(%d+)%s*,%s*"items"%s*:%s*%[(.-)%]') do
         inv_type = tonumber(inv_type)
@@ -312,7 +313,7 @@ local function parseInventoryPacket(json_str)
                                     sampAddChatMessage('[Sawnoff] {42B02C}Обрез подтверждён в слоте '..slot, 0x96FF00)
                                 else
                                     sampAddChatMessage('[Sawnoff] {FF6347}Обрез НЕ найден в слоте '..slot..' (ID '..id_num..' вместо '..sawnoffId[0]..').', 0x96FF00)
-                                    resetSawnoffSlot()  -- Просто сбрасываем слот, не обновляем инвентарь
+                                    resetSawnoffSlot()
                                 end
                             else
                                 if id_num == alt_model_id[0] then
