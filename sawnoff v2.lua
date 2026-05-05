@@ -1,6 +1,6 @@
 script_name('Sawnoff')
 script_author('sakuta')
-script_version('2.0')
+script_version('2.1')
 
 -- Подключение библиотек
 local se = require 'lib.samp.events'
@@ -22,7 +22,7 @@ local cfg = inicfg.load({
         sawnoffId = 5822,
 		auto_update = true,
         dbg = false,
-        sawnoff_slot = 0,   -- только слот, без ID!
+        sawnoff_slot = 0,
         alt_slot = 0,
 	}
 }, 'sawnoff')
@@ -166,7 +166,7 @@ local function refreshInventory()
     end
 end
 
--- Сохранение слота (без ID!)
+-- Сохранение слота
 local function saveSawnoffSlot(slot)
     if slot and slot ~= cfg.settings.sawnoff_slot then
         cfg.settings.sawnoff_slot = slot
@@ -204,7 +204,7 @@ local function resetAltSlot()
     cached_alt_type = nil
 end
 
--- Поиск предмета по ID во всём инвентаре
+-- Поиск предмета по ID
 function findItemById(item_id)
 	if not item_id or item_id <= 0 then return nil, nil end
 	for slot, data in pairs(inventory) do
@@ -213,10 +213,6 @@ function findItemById(item_id)
 		end
 	end
 	return nil, nil
-end
-
-function FindAltItem(item_id)
-    return findItemById(item_id)
 end
 
 local function isEquippedItemData(data)
@@ -242,13 +238,11 @@ local function clickSawnoffSlot(slot, data)
     clickWithVerification(click_slot, true)
 end
 
--- Обновление кэша: сначала поиск по ID, если не нашли — используем сохранённый слот
+-- Обновление кэша (сначала ищем по ID, потом используем сохранённый слот)
 local function updateCachedSlots()
-    -- Обработка обреза
-    if sawnoffId and sawnoffId[0] and sawnoffId[0] > 0 then
+    if sawnoffId and sawnoffId[0] > 0 then
         local slot, data = findItemById(sawnoffId[0])
         if slot then
-            -- Нашли по ID — сохраняем слот
             cached_sawnoff_slot = slot
             cached_sawnoff_type = data and data.type or nil
             saveSawnoffSlot(slot)
@@ -256,12 +250,11 @@ local function updateCachedSlots()
                 sampAddChatMessage(string.format("[Отладка] Слот обреза найден по ID: %d", slot), 0x96FF00)
             end
         else
-            -- Не нашли по ID, пытаемся использовать сохранённый слот
             if cfg.settings.sawnoff_slot ~= 0 then
                 cached_sawnoff_slot = cfg.settings.sawnoff_slot
-                cached_sawnoff_type = nil   -- тип неизвестен, проверим при клике
+                cached_sawnoff_type = nil
                 if debug_mode[0] then
-                    sampAddChatMessage(string.format("[Отладка] Используем сохранённый слот обреза: %d (ID неизвестен)", cfg.settings.sawnoff_slot), 0x96FF00)
+                    sampAddChatMessage(string.format("[Отладка] Используем сохранённый слот обреза: %d", cfg.settings.sawnoff_slot), 0x96FF00)
                 end
             else
                 cached_sawnoff_slot = nil
@@ -269,8 +262,7 @@ local function updateCachedSlots()
             end
         end
     end
-    -- Обработка альт-предмета
-    if alt_model_id and alt_model_id[0] and alt_model_id[0] > 0 then
+    if alt_model_id and alt_model_id[0] > 0 then
         local slot, data = findItemById(alt_model_id[0])
         if slot then
             cached_alt_slot = slot
@@ -288,9 +280,12 @@ local function updateCachedSlots()
     end
 end
 
--- Парсинг JSON через регулярные выражения
+-- Парсинг JSON — теперь только для личного инвентаря (типы 1 и 2)
 local function parseInventoryPacket(json_str)
+    -- Игнорируем, если это не инвентарь игрока (нет слотов типа 1 или 2)
     if not json_str or not json_str:find('event.inventory.playerInventory') then return false end
+    if not json_str:find('"type":1') and not json_str:find('"type":2') then return false end
+    
     for inv_type, items in json_str:gmatch('"type"%s*:%s*(%d+)%s*,%s*"items"%s*:%s*%[(.-)%]') do
         inv_type = tonumber(inv_type)
         if inv_type == 1 or inv_type == 2 or inv_type == 3 then
@@ -310,15 +305,14 @@ local function parseInventoryPacket(json_str)
                             item = id_num,
                             amount = tonumber(amount) or 1
                         }
-                        -- Проверка ожидаемых ID после клика
+                        -- Проверка после клика
                         if pending_verify_slot == slot then
                             if pending_verify_is_sawnoff then
                                 if id_num == sawnoffId[0] then
                                     sampAddChatMessage('[Sawnoff] {42B02C}Обрез подтверждён в слоте '..slot, 0x96FF00)
                                 else
                                     sampAddChatMessage('[Sawnoff] {FF6347}Обрез НЕ найден в слоте '..slot..' (ID '..id_num..' вместо '..sawnoffId[0]..').', 0x96FF00)
-                                    resetSawnoffSlot()
-                                    refreshInventory()
+                                    resetSawnoffSlot()  -- Просто сбрасываем слот, не обновляем инвентарь
                                 end
                             else
                                 if id_num == alt_model_id[0] then
@@ -326,7 +320,6 @@ local function parseInventoryPacket(json_str)
                                 else
                                     sampAddChatMessage('[Sawnoff] {FF6347}Альт-предмет НЕ найден в слоте '..slot..' (ID '..id_num..' вместо '..alt_model_id[0]..').', 0x96FF00)
                                     resetAltSlot()
-                                    refreshInventory()
                                 end
                             end
                             pending_verify_slot = nil
@@ -611,11 +604,12 @@ end
 
 function se.onApplyPlayerAnimation(playerId, animLib, animName, frameDelta, loop, lockX, lockY, freeze, time)
     if work and sawnoffFlag[5] then
+        local playerPed = getPlayerPed()
         if playerPed then
             local _, id = sampGetPlayerIdByCharHandle(playerPed)
             if playerId == id and animLib == 'BOMBER' then
                 sawnoffFlag[5] = false
-                cef_send('inventoryClose')
+                send_cef('inventoryClose')
             end
         end
     end
