@@ -1,6 +1,6 @@
 script_name('Sawnoff')
 script_author('sakuta')
-script_version('2.0')
+script_version('2.1')
 
 -- Подключение библиотек
 local se = require 'lib.samp.events'
@@ -590,8 +590,11 @@ function se.onServerMessage(color, text)
             first_start = true
         end
         if text:match('[Информация] Вы использовали запас обрезов.') then
-            wait(222)
-            send_cef('inventoryClose')
+            if work and sawnoffFlag[5] then
+                wait(111)
+                sawnoffFlag[5] = false
+                send_cef('inventoryClose')
+            end
         end
     end
     if work then
@@ -599,19 +602,6 @@ function se.onServerMessage(color, text)
             sampAddChatMessage('[Sawnoff] {FFFFFF}Аксессуар {FF6347}сломан! Скрипт {FF6347}остановлен.', 0x96FF00)
             thisScript():reload()
             work = false
-        end
-    end
-end
-
-function se.onApplyPlayerAnimation(playerId, animLib, animName, frameDelta, loop, lockX, lockY, freeze, time)
-    if work and sawnoffFlag[5] then
-        local playerPed = getPlayerPed()
-        if playerPed then
-            local _, id = sampGetPlayerIdByCharHandle(playerPed)
-            if playerId == id and animLib == 'BOMBER' then
-                sawnoffFlag[5] = false
-                send_cef('inventoryClose')
-            end
         end
     end
 end
