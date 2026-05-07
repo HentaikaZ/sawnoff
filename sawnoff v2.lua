@@ -1,6 +1,6 @@
 script_name('Sawnoff')
 script_author('sakuta')
-script_version('2.1')
+script_version('2.2')
 
 -- Подключение библиотек
 local se = require 'lib.samp.events'
@@ -50,6 +50,51 @@ local cached_alt_type = nil
 -- Флаги для проверки ID после клика
 local pending_verify_slot = nil
 local pending_verify_is_sawnoff = false
+local sawnoff_action_done = false
+local runtime_generation = 0
+local function resetRuntimeState()
+    runtime_generation = runtime_generation + 1
+    inventory = {}
+    cached_sawnoff_slot = nil
+    cached_sawnoff_type = nil
+    cached_alt_slot = nil
+    cached_alt_type = nil
+    pending_verify_slot = nil
+    pending_verify_is_sawnoff = false
+    sawnoffFlag[4] = false
+    sawnoffFlag[5] = false
+    sawnoff_action_done = false
+    delay_time = nil
+    first_start = true
+end
+local function prepareSawnoffAction()
+    sawnoffFlag[5] = true
+    sawnoff_action_done = false
+    delay_time = nil
+end
+local function waitSawnoffResult(timeout_seconds)
+    local wait_start = os.time()
+    repeat
+        wait(100)
+    until delay_time ~= nil or sawnoff_action_done or not work or os.time() - wait_start > timeout_seconds
+    if delay_time == nil then delay_time = 60 end
+end
+local function waitDelayOrStop(minutes, extra_ms, generation)
+    local total_wait = (tonumber(minutes) or 60) * 60000 + (extra_ms or 0)
+    local elapsed = 0
+    while elapsed < total_wait and work and (not generation or generation == runtime_generation) do
+        local step = math.min(5000, total_wait - elapsed)
+        wait(step)
+        elapsed = elapsed + step
+        if generation and generation ~= runtime_generation then
+            break
+        end
+        if sampGetGamestate() ~= 3 or not sampIsLocalPlayerSpawned() then
+            work = false
+            break
+        end
+    end
+end
 
 -- Настройки ImGui
 local auto_start = imgui.new.bool(cfg.settings.auto_start)
@@ -367,18 +412,14 @@ function onReceivePacket(id, bs)
     end
 
     if id == 31 or id == 32 or id == 33 or id == 12 or id == 35 or id == 36 or id == 37 then
-        inventory = {}
-        cached_sawnoff_slot = nil
-        cached_alt_slot = nil
-        pending_verify_slot = nil
+        resetRuntimeState()
         cfg.settings.connected = false
         pcall(inicfg.save, cfg, 'sawnoff.ini')
         if work then work = false end
+        swap_thread_running = false
+        cycle_thread_running = false
     elseif id == 34 then
-        inventory = {}
-        cached_sawnoff_slot = nil
-        cached_alt_slot = nil
-        pending_verify_slot = nil
+        resetRuntimeState()
         cfg.settings.connected = true
         pcall(inicfg.save, cfg, 'sawnoff.ini')
         if auto_start and auto_start[0] then
@@ -388,6 +429,9 @@ function onReceivePacket(id, bs)
                 if cfg.settings.connected then
                     if not work then
                         work = true
+                        first_start = true
+                        delay_time = nil
+                        sawnoff_action_done = false
                         sampAddChatMessage('[Sawnoff] {FFFFFF}Автоматический режим работы: {42B02C}включён{FFFFFF}.', 0x96FF00)
                         if auto_swap and auto_swap[0] then startAutoSwapThread() end
                         if auto_cycle_cd and auto_cycle_cd[0] and not cycle_thread_running then startCycleWithCD() end
@@ -425,8 +469,9 @@ local function startCycleWithCD()
     if cycle_thread_running then return end
     if not auto_cycle_cd or not auto_cycle_cd[0] then return end
     cycle_thread_running = true
+    local generation = runtime_generation
     lua_thread.create(function()
-        while work and auto_cycle_cd and auto_cycle_cd[0] do
+        while work and generation == runtime_generation and auto_cycle_cd and auto_cycle_cd[0] do
             if isPayDayBlocked() then
                 local wait_time = getPayDayUnlockTime()
                 sampAddChatMessage(string.format('[Sawnoff] {FFFFFF}Цикл приостановлен из-за PayDay! Ждите {FF6347}%d сек.', wait_time), 0x96FF00)
@@ -441,12 +486,9 @@ local function startCycleWithCD()
                     send_cef('inventory.moveItemForce|{"slot": ' .. tostring(cached_sawnoff_slot) .. ', "type": 1, "amount": 1}')
                     wait(333)
                 end
+                prepareSawnoffAction()
                 clickSawnoffSlot(cached_sawnoff_slot, sawnoff_data)
-                sawnoffFlag[5] = true
-                delay_time = nil
-                local wait_start = os.time()
-                repeat wait(100) until delay_time ~= nil or not work or os.time() - wait_start > 10
-                if delay_time == nil then delay_time = 60 end
+                waitSawnoffResult(10)
             else
                 sampAddChatMessage('[Sawnoff] {FF6347}Обрез не найден при цикле.', 0x96FF00)
             end
@@ -492,7 +534,7 @@ local function startCycleWithCD()
                     end
                 end
             end
-            if not work or not auto_cycle_cd[0] then break end
+            if not work or generation ~= runtime_generation or not auto_cycle_cd[0] then break end
         end
         cycle_thread_running = false
     end)
@@ -502,8 +544,9 @@ function startAutoSwapThread()
     if swap_thread_running then return end
     if not auto_swap or not auto_swap[0] then return end
     swap_thread_running = true
+    local generation = runtime_generation
     lua_thread.create(function()
-        while work and auto_swap[0] do
+        while work and generation == runtime_generation and auto_swap[0] do
             local t = os.date('*t')
             local secs_now = t.min * 60 + t.sec
             local target1 = 28 * 60
@@ -512,10 +555,10 @@ function startAutoSwapThread()
             local diff2 = (target2 - secs_now) % 3600
             local wait_secs = math.min(diff1, diff2)
             wait(wait_secs * 1000)
-            if not work or not auto_swap[0] then break end
+            if not work or generation ~= runtime_generation or not auto_swap[0] then break end
             swapToAlt(false)
-            wait(5 * 60000)
-            if not work then break end
+            waitDelayOrStop(5, 0, generation)
+            if not work or generation ~= runtime_generation then break end
             swapToSawnoff()
         end
         swap_thread_running = false
@@ -556,7 +599,11 @@ function swapToAlt(scheduleReturn)
         sampAddChatMessage('[Sawnoff] {FFFFFF}Альт-предмет (ID '..alt_model_id[0]..') надет.', 0x96FF00)
         send_cef('inventoryClose')
         if scheduleReturn and auto_swap[0] then
-            lua_thread.create(function() wait(5 * 60000) swapToSawnoff() end)
+            lua_thread.create(function()
+                local generation = runtime_generation
+                waitDelayOrStop(5, 0, generation)
+                if work and generation == runtime_generation then swapToSawnoff() end
+            end)
         end
     else
         sampAddChatMessage('[Sawnoff] {FFFFFF}Альт-предмет с ID: {FFD700}'..alt_model_id[0]..' {FF6347}не найден{FFFFFF}.', 0x96FF00)
@@ -589,10 +636,11 @@ function se.onServerMessage(color, text)
             sawnoffFlag[5] = false
             first_start = true
         end
-        if text:match('[Информация] Вы использовали запас обрезов.') then
+        if text:find('Вы использовали запас обрезов.', 1, true) then
             if work and sawnoffFlag[5] then
                 wait(111)
                 sawnoffFlag[5] = false
+                sawnoff_action_done = true
                 send_cef('inventoryClose')
             end
         end
@@ -631,22 +679,16 @@ function main()
                         if cached_sawnoff_slot then
                             local sawnoff_data = inventory[cached_sawnoff_slot]
                             if cached_sawnoff_slot == 3 or (sawnoff_data and sawnoff_data.type == 2) then
+                                prepareSawnoffAction()
                                 clickSawnoffSlot(cached_sawnoff_slot, sawnoff_data)
-                                sawnoffFlag[5] = true
-                                delay_time = nil
-                                local wait_start = os.time()
-                                repeat wait(100) until delay_time ~= nil or not work or os.time() - wait_start > 10
-                                if delay_time == nil then delay_time = 60 end
+                                waitSawnoffResult(10)
                                 send_cef('inventoryClose')
                             else
                                 send_cef('inventory.moveItemForce|{"slot": ' .. tostring(cached_sawnoff_slot) .. ', "type": 1, "amount": 1}')
                                 wait(333)
+                                prepareSawnoffAction()
                                 clickSawnoffSlot(cached_sawnoff_slot, sawnoff_data)
-                                sawnoffFlag[5] = true
-                                delay_time = nil
-                                local wait_start = os.time()
-                                repeat wait(100) until delay_time ~= nil or not work or os.time() - wait_start > 10
-                                if delay_time == nil then delay_time = 60 end
+                                waitSawnoffResult(10)
                                 send_cef('inventoryClose')
                             end
                         else
@@ -661,7 +703,7 @@ function main()
                     send_cef('inventoryClose')
                 end
                 if delay_time ~= nil then
-                    wait((tonumber(delay_time) or 60) * 60000 + 60000)
+                    waitDelayOrStop(delay_time, 60000)
                     delay_time = nil
                     first_start = true
                 end
@@ -781,6 +823,9 @@ imgui.OnFrame(function() return main_window and main_window[0] and not isPauseMe
         if not work then
             if cfg.settings.connected and sampGetGamestate() == 3 and sampIsLocalPlayerSpawned() then
                 work = true
+                first_start = true
+                delay_time = nil
+                sawnoff_action_done = false
                 if main_window then main_window[0] = false end
                 if auto_swap[0] then startAutoSwapThread() end
                 if auto_cycle_cd[0] and not cycle_thread_running then startCycleWithCD() end
