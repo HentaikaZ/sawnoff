@@ -1,6 +1,6 @@
 script_name('Sawnoff')
 script_author('sakuta')
-script_version('2.2')
+script_version('2.3')
 
 -- Подключение библиотек
 local se = require 'lib.samp.events'
@@ -398,55 +398,6 @@ local function readCefStringFromPacket(bs)
     return nil
 end
 
-function onReceivePacket(id, bs)
-    if id == 220 then
-        local cef_str = readCefStringFromPacket(bs)
-        if cef_str then
-            if debug_mode[0] then sampAddChatMessage("[Отладка] CEF: " .. cef_str, 0x96FF00) end
-            if cef_str == "inventoryItemsLoaded" then
-                send_cef('inventory.getPlayerInventory')
-                return false
-            end
-            parseInventoryPacket(cef_str)
-        end
-    end
-
-    if id == 31 or id == 32 or id == 33 or id == 12 or id == 35 or id == 36 or id == 37 then
-        resetRuntimeState()
-        cfg.settings.connected = false
-        pcall(inicfg.save, cfg, 'sawnoff.ini')
-        if work then work = false end
-        swap_thread_running = false
-        cycle_thread_running = false
-    elseif id == 34 then
-        resetRuntimeState()
-        cfg.settings.connected = true
-        pcall(inicfg.save, cfg, 'sawnoff.ini')
-        if auto_start and auto_start[0] then
-            lua_thread.create(function() 
-                repeat wait(0) until sampIsLocalPlayerSpawned() and sampGetGamestate() == 3
-                wait(2000)
-                if cfg.settings.connected then
-                    if not work then
-                        work = true
-                        first_start = true
-                        delay_time = nil
-                        sawnoff_action_done = false
-                        sampAddChatMessage('[Sawnoff] {FFFFFF}Автоматический режим работы: {42B02C}включён{FFFFFF}.', 0x96FF00)
-                        if auto_swap and auto_swap[0] then startAutoSwapThread() end
-                        if auto_cycle_cd and auto_cycle_cd[0] and not cycle_thread_running then startCycleWithCD() end
-                        if not auto_swap and auto_swap[0] and not auto_cycle_cd and auto_cycle_cd[0] then
-                            first_start = true
-                        end
-                    end 
-                end
-            end)
-        end
-    end
-end
-
-addEventHandler('onReceivePacket', onReceivePacket)
-
 -- ======================== ОСНОВНЫЕ ФУНКЦИИ (цикл, своп) ========================
 local function isPayDayBlocked()
     local t = os.date('*t')
@@ -540,31 +491,6 @@ local function startCycleWithCD()
     end)
 end
 
-function startAutoSwapThread()
-    if swap_thread_running then return end
-    if not auto_swap or not auto_swap[0] then return end
-    swap_thread_running = true
-    local generation = runtime_generation
-    lua_thread.create(function()
-        while work and generation == runtime_generation and auto_swap[0] do
-            local t = os.date('*t')
-            local secs_now = t.min * 60 + t.sec
-            local target1 = 28 * 60
-            local target2 = 58 * 60
-            local diff1 = (target1 - secs_now) % 3600
-            local diff2 = (target2 - secs_now) % 3600
-            local wait_secs = math.min(diff1, diff2)
-            wait(wait_secs * 1000)
-            if not work or generation ~= runtime_generation or not auto_swap[0] then break end
-            swapToAlt(false)
-            waitDelayOrStop(5, 0, generation)
-            if not work or generation ~= runtime_generation then break end
-            swapToSawnoff()
-        end
-        swap_thread_running = false
-    end)
-end
-
 function swapToSawnoff()
     refreshInventory()
     local timeout = 0
@@ -613,6 +539,31 @@ function swapToAlt(scheduleReturn)
     end
 end
 
+function startAutoSwapThread()
+    if swap_thread_running then return end
+    if not auto_swap or not auto_swap[0] then return end
+    swap_thread_running = true
+    local generation = runtime_generation
+    lua_thread.create(function()
+        while work and generation == runtime_generation and auto_swap[0] do
+            local t = os.date('*t')
+            local secs_now = t.min * 60 + t.sec
+            local target1 = 28 * 60
+            local target2 = 58 * 60
+            local diff1 = (target1 - secs_now) % 3600
+            local diff2 = (target2 - secs_now) % 3600
+            local wait_secs = math.min(diff1, diff2)
+            wait(wait_secs * 1000)
+            if not work or generation ~= runtime_generation or not auto_swap[0] then break end
+            swapToAlt(false)
+            waitDelayOrStop(5, 0, generation)
+            if not work or generation ~= runtime_generation then break end
+            swapToSawnoff()
+        end
+        swap_thread_running = false
+    end)
+end
+
 -- ======================== ОБРАБОТЧИКИ СОБЫТИЙ ========================
 function se.onShowDialog(dialogId, style, title, button1, button2, text)
     if not title then return end
@@ -654,6 +605,56 @@ function se.onServerMessage(color, text)
 end
 
 -- ========================== ГЛАВНЫЙ ПОТОК ==========================
+
+function onReceivePacket(id, bs)
+    if id == 220 then
+        local cef_str = readCefStringFromPacket(bs)
+        if cef_str then
+            if debug_mode[0] then sampAddChatMessage("[Отладка] CEF: " .. cef_str, 0x96FF00) end
+            if cef_str == "inventoryItemsLoaded" then
+                send_cef('inventory.getPlayerInventory')
+                return false
+            end
+            parseInventoryPacket(cef_str)
+        end
+    end
+
+    if id == 31 or id == 32 or id == 33 or id == 12 or id == 35 or id == 36 or id == 37 then
+        resetRuntimeState()
+        cfg.settings.connected = false
+        pcall(inicfg.save, cfg, 'sawnoff.ini')
+        if work then work = false end
+        swap_thread_running = false
+        cycle_thread_running = false
+    elseif id == 34 then
+        resetRuntimeState()
+        cfg.settings.connected = true
+        pcall(inicfg.save, cfg, 'sawnoff.ini')
+        if auto_start and auto_start[0] then
+            lua_thread.create(function() 
+                repeat wait(0) until sampIsLocalPlayerSpawned() and sampGetGamestate() == 3
+                wait(2000)
+                if cfg.settings.connected then
+                    if not work then
+                        work = true
+                        first_start = true
+                        delay_time = nil
+                        sawnoff_action_done = false
+                        sampAddChatMessage('[Sawnoff] {FFFFFF}Автоматический режим работы: {42B02C}включён{FFFFFF}.', 0x96FF00)
+                        if auto_swap and auto_swap[0] then startAutoSwapThread() end
+                        if auto_cycle_cd and auto_cycle_cd[0] and not cycle_thread_running then startCycleWithCD() end
+                        if not auto_swap and auto_swap[0] and not auto_cycle_cd and auto_cycle_cd[0] then
+                            first_start = true
+                        end
+                    end 
+                end
+            end)
+        end
+    end
+end
+
+addEventHandler('onReceivePacket', onReceivePacket)
+
 function main()
     if not isSampLoaded() or not isSampfuncsLoaded() then return end
     while not isSampAvailable() do wait(100) end
