@@ -638,7 +638,6 @@ function se.onServerMessage(color, text)
         end
         if text:find('Вы использовали запас обрезов.', 1, true) then
             if work and sawnoffFlag[5] then
-                wait(111)
                 sawnoffFlag[5] = false
                 sawnoff_action_done = true
                 send_cef('inventoryClose')
