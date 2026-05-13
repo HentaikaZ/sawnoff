@@ -1,6 +1,6 @@
 script_name('Sawnoff')
 script_author('sakuta')
-script_version('2.4')
+script_version('2.5')
 
 -- Подключение библиотек
 local se = require 'lib.samp.events'
@@ -327,11 +327,20 @@ end
 
 -- Парсинг JSON — теперь только для личного инвентаря (типы 1 и 2)
 local function parseInventoryPacket(json_str)
-    -- Игнорируем, если это не инвентарь игрока
-    if not json_str or not json_str:find('event.inventory.playerInventory') then return false end
-    -- Личный инвентарь ВСЕГДА содержит слоты типа 2 (экипировка). Если их нет — это магазин/сундук
-    if not json_str:find('"type":2') then return false end
-    
+    -- Пропускаем пакеты от торговой лавки
+    if json_str and json_str:find('"name":"Торговая лавка"') then
+        if debug_mode[0] then
+            sampAddChatMessage('[Отладка] Пакет торговой лавки пропущен', 0x96FF00)
+        end
+        return false
+    end
+
+    -- Если нет items, то нечего обрабатывать
+    if not json_str or not json_str:find('"items"') then
+        return false
+    end
+
+    -- Обработка пакетов инвентаря (type 1,2,3)
     for inv_type, items in json_str:gmatch('"type"%s*:%s*(%d+)%s*,%s*"items"%s*:%s*%[(.-)%]') do
         inv_type = tonumber(inv_type)
         if inv_type == 1 or inv_type == 2 or inv_type == 3 then
@@ -351,20 +360,20 @@ local function parseInventoryPacket(json_str)
                             item = id_num,
                             amount = tonumber(amount) or 1
                         }
-                        -- Проверка после клика
+                        -- Проверка верификации слота
                         if pending_verify_slot == slot then
                             if pending_verify_is_sawnoff then
                                 if id_num == sawnoffId[0] then
-                                    sampAddChatMessage('[Sawnoff] {42B02C}Обрез подтверждён в слоте '..slot, 0x96FF00)
+                                    sampAddChatMessage('[Sawnoff] {42B02C}Обрез успешно найден в слоте '..slot, 0x96FF00)
                                 else
-                                    sampAddChatMessage('[Sawnoff] {FF6347}Обрез НЕ найден в слоте '..slot..' (ID '..id_num..' вместо '..sawnoffId[0]..').', 0x96FF00)
+                                    sampAddChatMessage('[Sawnoff] {FF6347}Обрез не найден в слоте '..slot..' (ID '..id_num..' ожидался '..sawnoffId[0]..').', 0x96FF00)
                                     resetSawnoffSlot()
                                 end
                             else
                                 if id_num == alt_model_id[0] then
-                                    sampAddChatMessage('[Sawnoff] {42B02C}Альт-предмет подтверждён в слоте '..slot, 0x96FF00)
+                                    sampAddChatMessage('[Sawnoff] {42B02C}Альт-предмет успешно найден в слоте '..slot, 0x96FF00)
                                 else
-                                    sampAddChatMessage('[Sawnoff] {FF6347}Альт-предмет НЕ найден в слоте '..slot..' (ID '..id_num..' вместо '..alt_model_id[0]..').', 0x96FF00)
+                                    sampAddChatMessage('[Sawnoff] {FF6347}Альт-предмет не найден в слоте '..slot..' (ID '..id_num..' ожидался '..alt_model_id[0]..').', 0x96FF00)
                                     resetAltSlot()
                                 end
                             end
