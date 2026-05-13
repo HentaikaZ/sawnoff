@@ -1,6 +1,6 @@
 script_name('Sawnoff')
 script_author('sakuta')
-script_version('2.3')
+script_version('2.4')
 
 -- Подключение библиотек
 local se = require 'lib.samp.events'
@@ -750,7 +750,7 @@ imgui.OnFrame(function() return main_window and main_window[0] and not isPauseMe
     imgui.CenterText('Работа с аксессуаром')
     imgui.PopFont()
     imgui.PushFont(Font[18])
-    imgui.CenterText('by SAKUTA')
+    imgui.CenterText('by SAKUTA aka Porn_Hubz')
     imgui.PopFont()
     imgui.PushFont(Font[18])
     imgui.CenterText('Версия скрипта: ' .. thisScript().version)
@@ -847,8 +847,8 @@ imgui.OnFrame(function() return main_window and main_window[0] and not isPauseMe
         checkForUpdate(true)
     end
     imgui.SameLine()
-    if imgui.Button(u8('Ryodan famq <3'), imgui.ImVec2(170, 30)) then
-        os.execute('explorer.exe "https://parad1st.github.io/Screamer/"')
+    if imgui.Button(u8('Ryodan discord <3'), imgui.ImVec2(170, 30)) then
+        os.execute('explorer.exe "https://discord.gg/b8Jw95tTtj"')
     end
     imgui.PopFont()
     imgui.EndChild()
